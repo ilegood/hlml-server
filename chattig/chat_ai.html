@@ -10,6 +10,7 @@
         font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
         background-color: #f0f2f5;
         display: flex;
+        flex-direction: column;
         justify-content: center;
         align-items: center;
         height: 100vh;
@@ -115,6 +116,19 @@
         background-color: #6c757d;
         cursor: not-allowed;
       }
+      .link-container {
+        text-align: center;
+        margin-top: 20px;
+      }
+      .discord-link {
+        color: #5865f2;
+        text-decoration: none;
+        font-weight: bold;
+        font-size: 15px;
+      }
+      .discord-link:hover {
+        text-decoration: underline;
+      }
     </style>
   </head>
   <body>
@@ -139,6 +153,12 @@
         />
         <button class="send-btn" id="send-btn">➤</button>
       </div>
+    </div>
+
+    <div class="link-container">
+      <a href="discord.html" target="_blank" class="discord-link"
+        >🎮 디스코드 테마로 열기</a
+      >
     </div>
 
     <script src="https://cdn.socket.io/4.7.4/socket.io.min.js"></script>
