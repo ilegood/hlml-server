@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>간단한 채팅창</title>
+    <link rel="stylesheet" href="" />
+    <style>
+      body {
+        font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+        background-color: #f0f2f5;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        height: 100vh;
+        margin: 0;
+      }
+      .chat-container {
+        width: 350px;
+        background-color: #fff;
+        border-radius: 12px;
+        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+      }
+      .chat-header {
+        background-color: #007bff;
+        color: white;
+        padding: 15px;
+        text-align: center;
+        font-weight: bold;
+        font-size: 1.1rem;
+      }
+      .chat-messages {
+        height: 400px;
+        padding: 15px;
+        overflow-y: auto;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        background-color: #fafafa;
+      }
+      .message {
+        max-width: 75%;
+        padding: 10px 14px;
+        border-radius: 15px;
+        font-size: 14px;
+        line-height: 1.4;
+        word-wrap: break-word;
+      }
+      .message.user {
+        align-self: flex-end;
+        background-color: #007bff;
+        color: white;
+        border-bottom-right-radius: 3px;
+      }
+      .message.bot {
+        align-self: flex-start;
+        background-color: #e4e6eb;
+        color: black;
+        border-bottom-left-radius: 3px;
+      }
+      .chat-input-container {
+        display: flex;
+        padding: 12px;
+        background-color: #fff;
+        border-top: 1px solid #ddd;
+      }
+      .chat-input {
+        flex-grow: 1;
+        padding: 10px 15px;
+        border: 1px solid #ddd;
+        border-radius: 20px;
+        outline: none;
+        font-size: 14px;
+        transition: border-color 0.2s;
+      }
+      .chat-input:focus {
+        border-color: #007bff;
+      }
+      .send-btn {
+        background-color: #007bff;
+        color: white;
+        border: none;
+        border-radius: 50%;
+        width: 40px;
+        height: 40px;
+        margin-left: 10px;
+        cursor: pointer;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        font-weight: bold;
+        transition: background-color 0.2s;
+      }
+      .send-btn:hover {
+        background-color: #0056b3;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="chat-container">
+      <div class="chat-header">실시간 채팅</div>
+      <div class="chat-messages" id="chat-messages">
+        <div class="message bot">
+          안녕하세요! 테스트용 채팅창입니다. 메시지를 입력해 보세요.
+        </div>
+      </div>
+      <div class="chat-input-container">
+        <input
+          type="text"
+          class="chat-input"
+          id="chat-input"
+          placeholder="메시지 입력..."
+          onkeypress="handleKeyPress(event)"
+        />
+        <button class="send-btn" onclick="sendMessage()">➤</button>
+      </div>
+    </div>
+
+    <script>
+      async function sendMessage() {
+        const inputField = document.getElementById("chat-input");
+        const messageText = inputField.value.trim();
+
+        if (messageText !== "") {
+          // 사용자의 메시지를 추가합니다.
+          addMessage(messageText, "user");
+          inputField.value = "";
+
+          try {
+            // 서버로 메시지를 전송합니다. (API 주소를 실제 서버 주소로 변경하세요)
+            const response = await fetch("http://localhost:3000/api/chat", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({ message: messageText }),
+            });
+
+            if (!response.ok) throw new Error("서버 응답 오류");
+
+            const data = await response.json();
+            // 서버 응답 구조에 맞게 data.reply 부분을 수정해서 사용하세요.
+            addMessage(data.reply || "서버로부터 응답을 받았습니다.", "bot");
+          } catch (error) {
+            console.error("Error:", error);
+            addMessage("서버와 통신하는 중 오류가 발생했습니다.", "bot");
+          }
+        }
+      }
+
+      // Enter 키를 누를 때 메시지가 전송되도록 합니다.
+      function handleKeyPress(event) {
+        if (event.key === "Enter") {
+          sendMessage();
+        }
+      }
+
+      // 메시지를 화면에 추가하는 함수입니다.
+      function addMessage(text, sender) {
+        const messagesContainer = document.getElementById("chat-messages");
+        const messageElement = document.createElement("div");
+
+        messageElement.classList.add("message");
+        messageElement.classList.add(sender);
+        messageElement.textContent = text;
+
+        messagesContainer.appendChild(messageElement);
+
+        // 새 메시지가 추가될 때마다 스크롤을 가장 아래로 내립니다.
+        messagesContainer.scrollTop = messagesContainer.scrollHeight;
+      }
+    </script>
+  </body>
+</html>
