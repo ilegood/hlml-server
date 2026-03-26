@@ -1,0 +1,1202 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>GUDDY 커뮤니티 채팅</title>
+    <script src="/socket.io/socket.io.js"></script>
+    <style>
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+      :root {
+        --bg-darkest: #111214;
+        --bg-dark: #1e2124;
+        --bg-mid: #282b30;
+        --bg-light: #36393f;
+        --bg-hover: #3e4147;
+        --accent: #5865f2;
+        --text-primary: #dcddde;
+        --text-secondary: #8e9297;
+        --text-muted: #72767d;
+        --online: #3ba55c;
+        --idle: #faa61a;
+        --offline: #747f8d;
+        --dnd: #ed4245;
+        --input-bg: #40444b;
+        --msg-hover: #32353b;
+      }
+      html,
+      body {
+        height: 100%;
+        font-family: "Segoe UI", system-ui, sans-serif;
+        background: var(--bg-darkest);
+        color: var(--text-primary);
+      }
+
+      #login-screen {
+        position: fixed;
+        inset: 0;
+        background: var(--bg-darkest);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 100;
+      }
+      .login-box {
+        background: var(--bg-mid);
+        border-radius: 12px;
+        padding: 40px 36px;
+        width: 380px;
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+      }
+      .login-box h1 {
+        font-size: 24px;
+        font-weight: 700;
+        margin-bottom: 6px;
+        color: white;
+      }
+      .login-box p {
+        color: var(--text-muted);
+        margin-bottom: 28px;
+        font-size: 14px;
+      }
+      .login-box label {
+        font-size: 12px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: var(--text-secondary);
+        display: block;
+        margin-bottom: 6px;
+      }
+      .login-box input {
+        width: 100%;
+        background: var(--bg-darkest);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 6px;
+        padding: 10px 14px;
+        font-size: 15px;
+        color: var(--text-primary);
+        outline: none;
+        margin-bottom: 20px;
+      }
+      .login-box input:focus {
+        border-color: var(--accent);
+      }
+      .login-btn {
+        width: 100%;
+        background: var(--accent);
+        color: white;
+        border: none;
+        border-radius: 6px;
+        padding: 12px;
+        font-size: 15px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: background 0.15s;
+      }
+      .login-btn:hover {
+        background: #4752c4;
+      }
+
+      #app {
+        display: none;
+        height: 100vh;
+      }
+      .layout {
+        display: flex;
+        height: 100%;
+      }
+
+      .server-list {
+        width: 72px;
+        background: var(--bg-darkest);
+        padding: 12px 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 8px;
+      }
+      .server-icon {
+        width: 48px;
+        height: 48px;
+        border-radius: 50%;
+        background: var(--bg-mid);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        font-size: 18px;
+        color: var(--text-secondary);
+        transition:
+          border-radius 0.2s,
+          background 0.15s;
+        flex-shrink: 0;
+      }
+      .server-icon.active,
+      .server-icon:hover {
+        border-radius: 16px;
+        background: var(--accent);
+        color: white;
+      }
+      .server-sep {
+        width: 32px;
+        height: 2px;
+        background: var(--bg-mid);
+        border-radius: 1px;
+      }
+
+      .channel-sidebar {
+        width: 240px;
+        background: var(--bg-mid);
+        display: flex;
+        flex-direction: column;
+        flex-shrink: 0;
+      }
+      .server-header {
+        padding: 16px;
+        font-size: 15px;
+        font-weight: 700;
+        color: var(--text-primary);
+        border-bottom: 1px solid rgba(0, 0, 0, 0.3);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+      }
+      .channel-list {
+        flex: 1;
+        overflow-y: auto;
+        padding: 8px 0;
+      }
+      .ch-category {
+        padding: 16px 8px 4px 16px;
+        font-size: 11px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: var(--text-muted);
+      }
+      .ch-item {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 8px 6px 16px;
+        margin: 0 8px;
+        border-radius: 4px;
+        cursor: pointer;
+        color: var(--text-muted);
+        font-size: 15px;
+        transition:
+          background 0.1s,
+          color 0.1s;
+      }
+      .ch-item:hover,
+      .ch-item.active {
+        background: var(--bg-hover);
+        color: var(--text-primary);
+      }
+      .ch-icon {
+        font-size: 17px;
+      }
+
+      .user-panel {
+        background: rgba(0, 0, 0, 0.2);
+        padding: 8px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .avatar-circle {
+        width: 32px;
+        height: 32px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 13px;
+        font-weight: 700;
+        color: white;
+        flex-shrink: 0;
+        position: relative;
+      }
+      .status-dot {
+        position: absolute;
+        bottom: 0;
+        right: 0;
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        border: 2px solid var(--bg-mid);
+      }
+      .user-panel .uname {
+        font-size: 13px;
+        font-weight: 600;
+        color: var(--text-primary);
+      }
+      .user-panel .utag {
+        font-size: 11px;
+        color: var(--text-muted);
+      }
+
+      .chat-main {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        background: var(--bg-light);
+        min-width: 0;
+      }
+      .chat-header {
+        height: 48px;
+        padding: 0 16px;
+        border-bottom: 1px solid rgba(0, 0, 0, 0.3);
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        flex-shrink: 0;
+      }
+      .chat-header .ch-name {
+        font-weight: 700;
+        font-size: 15px;
+      }
+      .chat-header .ch-topic {
+        font-size: 13px;
+        color: var(--text-muted);
+        border-left: 1px solid rgba(255, 255, 255, 0.1);
+        padding-left: 10px;
+        margin-left: 4px;
+      }
+
+      .messages {
+        flex: 1;
+        overflow-y: auto;
+        padding: 16px 0;
+        scroll-behavior: smooth;
+      }
+      .messages::-webkit-scrollbar {
+        width: 8px;
+      }
+      .messages::-webkit-scrollbar-track {
+        background: transparent;
+      }
+      .messages::-webkit-scrollbar-thumb {
+        background: rgba(0, 0, 0, 0.3);
+        border-radius: 4px;
+      }
+
+      /* 드래그 오버레이 */
+      .drop-overlay {
+        display: none;
+        position: absolute;
+        inset: 0;
+        background: rgba(88, 101, 242, 0.15);
+        border: 3px dashed var(--accent);
+        border-radius: 8px;
+        z-index: 50;
+        align-items: center;
+        justify-content: center;
+        flex-direction: column;
+        gap: 12px;
+        pointer-events: none;
+      }
+      .drop-overlay.active {
+        display: flex;
+      }
+      .drop-overlay span {
+        font-size: 48px;
+      }
+      .drop-overlay p {
+        font-size: 18px;
+        font-weight: 600;
+        color: var(--accent);
+      }
+
+      /* 이미지 붙여넣기 미리보기 */
+      .paste-preview {
+        display: none;
+        background: var(--bg-mid);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 8px;
+        padding: 10px 12px;
+        margin-bottom: 6px;
+        align-items: center;
+        gap: 10px;
+      }
+      .paste-preview.active {
+        display: flex;
+      }
+      .paste-preview img {
+        height: 60px;
+        border-radius: 4px;
+        object-fit: cover;
+        max-width: 100px;
+      }
+      .paste-preview .preview-info {
+        flex: 1;
+        font-size: 13px;
+        color: var(--text-secondary);
+      }
+      .paste-preview .preview-cancel {
+        background: transparent;
+        border: none;
+        cursor: pointer;
+        color: var(--text-muted);
+        font-size: 18px;
+        padding: 4px;
+        transition: color 0.1s;
+      }
+      .paste-preview .preview-cancel:hover {
+        color: var(--dnd);
+      }
+
+      .date-sep {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 12px 16px 8px;
+        color: var(--text-muted);
+        font-size: 12px;
+      }
+      .date-sep::before,
+      .date-sep::after {
+        content: "";
+        flex: 1;
+        height: 1px;
+        background: rgba(255, 255, 255, 0.07);
+      }
+      .msg-group {
+        padding: 4px 16px;
+        display: flex;
+        gap: 14px;
+        position: relative;
+        transition: background 0.05s;
+      }
+      .msg-group:hover {
+        background: var(--msg-hover);
+      }
+      .msg-group:hover .msg-actions {
+        opacity: 1;
+      }
+      .msg-avatar {
+        width: 40px;
+        height: 40px;
+        border-radius: 50%;
+        flex-shrink: 0;
+        margin-top: 2px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 700;
+        font-size: 15px;
+        color: white;
+      }
+      .msg-body {
+        flex: 1;
+        min-width: 0;
+      }
+      .msg-header {
+        display: flex;
+        align-items: baseline;
+        gap: 8px;
+        margin-bottom: 2px;
+      }
+      .msg-author {
+        font-size: 15px;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      .msg-author:hover {
+        text-decoration: underline;
+      }
+      .msg-time {
+        font-size: 11px;
+        color: var(--text-muted);
+      }
+      .msg-text {
+        font-size: 15px;
+        color: var(--text-primary);
+        line-height: 1.5;
+        word-break: break-word;
+      }
+      .msg-text code {
+        background: rgba(0, 0, 0, 0.3);
+        border-radius: 3px;
+        padding: 1px 5px;
+        font-family: monospace;
+        font-size: 13px;
+      }
+
+      /* 채팅 이미지 */
+      .msg-image {
+        margin-top: 6px;
+        max-width: 400px;
+        max-height: 300px;
+        border-radius: 6px;
+        display: block;
+        cursor: zoom-in;
+        object-fit: contain;
+        background: var(--bg-mid);
+      }
+
+      /* 이미지 확대 뷰어 */
+      .img-viewer {
+        display: none;
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.85);
+        z-index: 200;
+        align-items: center;
+        justify-content: center;
+        cursor: zoom-out;
+      }
+      .img-viewer.active {
+        display: flex;
+      }
+      .img-viewer img {
+        max-width: 90vw;
+        max-height: 90vh;
+        border-radius: 6px;
+        object-fit: contain;
+      }
+
+      .system-msg {
+        padding: 4px 16px;
+        font-size: 13px;
+        color: var(--text-muted);
+        font-style: italic;
+      }
+      .reactions-row {
+        display: flex;
+        gap: 4px;
+        margin-top: 4px;
+        flex-wrap: wrap;
+      }
+      .reaction {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        background: rgba(255, 255, 255, 0.07);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 4px;
+        padding: 2px 8px;
+        cursor: pointer;
+        font-size: 13px;
+        color: var(--text-secondary);
+        transition: background 0.1s;
+      }
+      .reaction:hover {
+        background: rgba(255, 255, 255, 0.12);
+      }
+      .reaction.mine {
+        background: rgba(88, 101, 242, 0.2);
+        border-color: rgba(88, 101, 242, 0.5);
+        color: var(--accent);
+      }
+      .reaction .rc {
+        font-size: 12px;
+        font-weight: 600;
+      }
+      .msg-actions {
+        position: absolute;
+        right: 16px;
+        top: -18px;
+        opacity: 0;
+        transition: opacity 0.1s;
+        background: var(--bg-mid);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 6px;
+        display: flex;
+        gap: 2px;
+        padding: 3px;
+      }
+      .msg-actions button {
+        background: transparent;
+        border: none;
+        cursor: pointer;
+        width: 30px;
+        height: 30px;
+        border-radius: 4px;
+        font-size: 15px;
+        color: var(--text-secondary);
+        transition:
+          background 0.1s,
+          color 0.1s;
+      }
+      .msg-actions button:hover {
+        background: var(--bg-hover);
+        color: var(--text-primary);
+      }
+
+      #typing-indicator {
+        height: 20px;
+        padding: 0 16px 0 72px;
+        font-size: 12px;
+        color: var(--text-muted);
+        flex-shrink: 0;
+      }
+
+      .chat-input-area {
+        padding: 0 16px 16px;
+        flex-shrink: 0;
+        position: relative;
+      }
+      .input-wrap {
+        background: var(--input-bg);
+        border-radius: 8px;
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        padding: 0 8px 0 14px;
+      }
+      .input-wrap input {
+        flex: 1;
+        background: transparent;
+        border: none;
+        outline: none;
+        font-size: 15px;
+        color: var(--text-primary);
+        padding: 11px 0;
+        font-family: inherit;
+      }
+      .input-wrap input::placeholder {
+        color: var(--text-muted);
+      }
+      .input-btn {
+        background: transparent;
+        border: none;
+        cursor: pointer;
+        font-size: 20px;
+        padding: 6px;
+        opacity: 0.65;
+        transition: opacity 0.15s;
+        line-height: 1;
+      }
+      .input-btn:hover {
+        opacity: 1;
+      }
+      .emoji-picker {
+        display: none;
+        background: var(--bg-mid);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 8px;
+        padding: 10px;
+        margin-top: 6px;
+      }
+      .emoji-picker .label {
+        font-size: 11px;
+        color: var(--text-muted);
+        text-transform: uppercase;
+        font-weight: 700;
+        margin-bottom: 8px;
+      }
+      .emoji-grid {
+        display: flex;
+        gap: 6px;
+        flex-wrap: wrap;
+      }
+      .emoji-grid span {
+        font-size: 22px;
+        cursor: pointer;
+        transition: transform 0.1s;
+      }
+      .emoji-grid span:hover {
+        transform: scale(1.2);
+      }
+
+      .member-list {
+        width: 240px;
+        background: var(--bg-mid);
+        padding: 12px 8px;
+        overflow-y: auto;
+        flex-shrink: 0;
+      }
+      .member-list::-webkit-scrollbar {
+        width: 4px;
+      }
+      .member-list::-webkit-scrollbar-thumb {
+        background: rgba(0, 0, 0, 0.2);
+        border-radius: 2px;
+      }
+      .member-cat {
+        font-size: 11px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: var(--text-muted);
+        padding: 8px 8px 4px;
+      }
+      .member-item {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 5px 8px;
+        border-radius: 4px;
+        cursor: pointer;
+        transition: background 0.1s;
+      }
+      .member-item:hover {
+        background: var(--bg-hover);
+      }
+      .mem-avatar {
+        width: 32px;
+        height: 32px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 12px;
+        font-weight: 700;
+        color: white;
+        flex-shrink: 0;
+        position: relative;
+      }
+      .mem-status {
+        position: absolute;
+        bottom: 0;
+        right: 0;
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        background: var(--online);
+        border: 2px solid var(--bg-mid);
+      }
+      .mem-name {
+        font-size: 14px;
+        color: var(--text-secondary);
+      }
+      .member-item:hover .mem-name {
+        color: var(--text-primary);
+      }
+    </style>
+  </head>
+  <body>
+    <!-- 숨겨진 파일 인풋 -->
+    <input
+      type="file"
+      id="file-input"
+      accept="image/*"
+      style="display: none"
+      onchange="handleFileSelect(event)"
+    />
+
+    <!-- 이미지 확대 뷰어 -->
+    <div class="img-viewer" id="img-viewer" onclick="closeViewer()">
+      <img id="viewer-img" src="" alt="이미지" />
+    </div>
+
+    <!-- Login Screen -->
+    <div id="login-screen">
+      <div class="login-box">
+        <h1>👋 GUDDY 채팅</h1>
+        <p>닉네임을 입력하고 채팅에 참여하세요</p>
+        <label>닉네임</label>
+        <input
+          id="username-input"
+          type="text"
+          placeholder="예: 땅콩피자"
+          maxlength="20"
+        />
+        <button class="login-btn" onclick="joinChat()">입장하기</button>
+      </div>
+    </div>
+
+    <!-- App -->
+    <div id="app">
+      <div class="layout">
+        <div class="server-list">
+          <div class="server-icon active">🏠</div>
+          <div class="server-sep"></div>
+          <div class="server-icon">🎮</div>
+          <div class="server-icon">🎵</div>
+          <div class="server-sep"></div>
+          <div
+            class="server-icon"
+            style="font-size: 24px; color: var(--online)"
+          >
+            +
+          </div>
+        </div>
+
+        <div class="channel-sidebar">
+          <div class="server-header">GUDDY 커뮤니티 <span>∨</span></div>
+          <div class="channel-list" id="channel-list">
+            <div class="ch-category">▾ 일반</div>
+            <div
+              class="ch-item active"
+              data-ch="일반"
+              onclick="switchChannel('일반', this)"
+            >
+              <span class="ch-icon">#</span>일반
+            </div>
+            <div
+              class="ch-item"
+              data-ch="자유수다"
+              onclick="switchChannel('자유수다', this)"
+            >
+              <span class="ch-icon">#</span>자유수다
+            </div>
+            <div
+              class="ch-item"
+              data-ch="정보공유"
+              onclick="switchChannel('정보공유', this)"
+            >
+              <span class="ch-icon">#</span>정보공유
+            </div>
+            <div class="ch-category">▾ 개발</div>
+            <div
+              class="ch-item"
+              data-ch="개발잡담"
+              onclick="switchChannel('개발잡담', this)"
+            >
+              <span class="ch-icon">#</span>개발잡담
+            </div>
+            <div
+              class="ch-item"
+              data-ch="코드리뷰"
+              onclick="switchChannel('코드리뷰', this)"
+            >
+              <span class="ch-icon">#</span>코드리뷰
+            </div>
+            <div class="ch-category">▾ 미디어</div>
+            <div
+              class="ch-item"
+              data-ch="짤방"
+              onclick="switchChannel('짤방', this)"
+            >
+              <span class="ch-icon">🖼</span>짤방
+            </div>
+          </div>
+          <div class="user-panel">
+            <div
+              class="avatar-circle"
+              id="my-avatar"
+              style="background: var(--accent)"
+            >
+              나
+              <div class="status-dot" style="background: var(--online)"></div>
+            </div>
+            <div style="flex: 1; min-width: 0">
+              <div class="uname" id="my-uname">닉네임</div>
+              <div class="utag">온라인</div>
+            </div>
+            <button class="input-btn" style="font-size: 16px" title="설정">
+              ⚙
+            </button>
+          </div>
+        </div>
+
+        <div class="chat-main" id="chat-main">
+          <!-- 드래그 앤 드롭 오버레이 -->
+          <div class="drop-overlay" id="drop-overlay">
+            <span>🖼</span>
+            <p>여기에 이미지를 놓으세요</p>
+          </div>
+
+          <div class="chat-header">
+            <span style="color: var(--text-muted); font-size: 18px">#</span>
+            <span class="ch-name" id="ch-title">일반</span>
+            <span class="ch-topic" id="ch-topic">자유롭게 이야기를 나눠요</span>
+          </div>
+
+          <div class="messages" id="messages">
+            <div class="date-sep" id="today-sep">오늘</div>
+          </div>
+
+          <div id="typing-indicator"></div>
+
+          <div class="chat-input-area">
+            <!-- 붙여넣기 미리보기 -->
+            <div class="paste-preview" id="paste-preview">
+              <img id="preview-img" src="" alt="미리보기" />
+              <div class="preview-info" id="preview-info">이미지 준비됨</div>
+              <button class="preview-cancel" onclick="cancelPaste()">✕</button>
+            </div>
+
+            <div class="input-wrap">
+              <button
+                class="input-btn"
+                onclick="document.getElementById('file-input').click()"
+                title="이미지 업로드"
+              >
+                +
+              </button>
+              <input
+                id="msg-input"
+                type="text"
+                placeholder="#일반 에서 메시지 보내기"
+                onkeydown="handleKey(event)"
+                oninput="onTyping()"
+                maxlength="500"
+              />
+              <button class="input-btn" onclick="toggleEmoji()">😊</button>
+              <button class="input-btn" onclick="sendMsg()">➤</button>
+            </div>
+            <div class="emoji-picker" id="emoji-picker">
+              <div class="label">빠른 이모지</div>
+              <div class="emoji-grid">
+                <span onclick="insertEmoji('😂')">😂</span
+                ><span onclick="insertEmoji('❤️')">❤️</span>
+                <span onclick="insertEmoji('🔥')">🔥</span
+                ><span onclick="insertEmoji('👍')">👍</span>
+                <span onclick="insertEmoji('🎉')">🎉</span
+                ><span onclick="insertEmoji('😭')">😭</span>
+                <span onclick="insertEmoji('🤔')">🤔</span
+                ><span onclick="insertEmoji('✅')">✅</span>
+                <span onclick="insertEmoji('🙏')">🙏</span
+                ><span onclick="insertEmoji('💯')">💯</span>
+                <span onclick="insertEmoji('😎')">😎</span
+                ><span onclick="insertEmoji('🚀')">🚀</span>
+                <span onclick="insertEmoji('👀')">👀</span
+                ><span onclick="insertEmoji('💀')">💀</span>
+                <span onclick="insertEmoji('🥳')">🥳</span
+                ><span onclick="insertEmoji('😍')">😍</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="member-list">
+          <div class="member-cat" id="online-label">온라인 — 0</div>
+          <div id="members-online"></div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      const TOPICS = {
+        일반: "자유롭게 이야기를 나눠요",
+        자유수다: "뭐든 얘기해요!",
+        정보공유: "유용한 정보를 공유해요",
+        개발잡담: "개발 이야기 환영",
+        코드리뷰: "코드 리뷰 요청해요",
+        짤방: "재미있는 짤 올려요",
+      };
+
+      let socket,
+        myName,
+        myColor,
+        currentChannel = "일반";
+      let emojiOpen = false;
+      let typingTimer = null;
+      let typingUsers = new Set();
+      let pendingImage = null; // { dataUrl, filename }
+
+      // ───── 로그인 ─────
+      function joinChat() {
+        const val = document.getElementById("username-input").value.trim();
+        if (!val) return;
+        myName = val;
+        document.getElementById("login-screen").style.display = "none";
+        document.getElementById("app").style.display = "block";
+        document.getElementById("my-uname").textContent = myName;
+
+        socket = io();
+
+        socket.on("connect", () => {
+          socket.emit("join", { username: myName, channel: currentChannel });
+        });
+
+        socket.on("history", ({ channel, messages }) => {
+          if (channel !== currentChannel) return;
+          const box = document.getElementById("messages");
+          box.innerHTML = '<div class="date-sep">오늘</div>';
+          messages.forEach((m) => appendMsg(m, false));
+          box.scrollTop = box.scrollHeight;
+        });
+
+        socket.on("message", ({ channel, msg }) => {
+          if (channel !== currentChannel) return;
+          appendMsg(msg, true);
+        });
+
+        socket.on("system", ({ channel, text }) => {
+          if (channel !== currentChannel) return;
+          const div = document.createElement("div");
+          div.className = "system-msg";
+          div.textContent = text;
+          document.getElementById("messages").appendChild(div);
+          scrollBottom();
+        });
+
+        socket.on("users", (users) => {
+          myColor =
+            users.find((u) => u.username === myName)?.color || "#5865f2";
+          document.getElementById("my-avatar").style.background = myColor;
+          document.getElementById("my-avatar").textContent = myName
+            .charAt(0)
+            .toUpperCase();
+          const onlineDiv = document.getElementById("members-online");
+          onlineDiv.innerHTML = "";
+          users.forEach((u) => {
+            const el = document.createElement("div");
+            el.className = "member-item";
+            el.innerHTML = `
+        <div class="mem-avatar" style="background:${u.color};">
+          ${u.username.charAt(0).toUpperCase()}
+          <div class="mem-status" style="background:var(--online);"></div>
+        </div>
+        <span class="mem-name">${escHtml(u.username)}</span>`;
+            onlineDiv.appendChild(el);
+          });
+          document.getElementById("online-label").textContent =
+            `온라인 — ${users.length}`;
+        });
+
+        socket.on("reaction", ({ channel, msgId, emoji, users }) => {
+          if (channel !== currentChannel) return;
+          const row = document.querySelector(
+            `[data-msgid="${msgId}"] .reactions-row`,
+          );
+          if (!row) return;
+          let btn = row.querySelector(`[data-emoji="${emoji}"]`);
+          if (users.length === 0) {
+            btn?.remove();
+            return;
+          }
+          if (!btn) {
+            btn = document.createElement("div");
+            btn.className = "reaction";
+            btn.dataset.emoji = emoji;
+            btn.onclick = () =>
+              socket.emit("reaction", {
+                channel: currentChannel,
+                msgId,
+                emoji,
+              });
+            row.appendChild(btn);
+          }
+          btn.classList.toggle("mine", users.includes(myName));
+          btn.innerHTML = `<span>${emoji}</span><span class="rc">${users.length}</span>`;
+        });
+
+        socket.on("typing", ({ username }) => {
+          typingUsers.add(username);
+          updateTyping();
+          clearTimeout(typingTimer);
+          typingTimer = setTimeout(() => {
+            typingUsers.delete(username);
+            updateTyping();
+          }, 2500);
+        });
+      }
+
+      // ───── 메시지 렌더링 ─────
+      function appendMsg(msg, scroll) {
+        const box = document.getElementById("messages");
+        const div = document.createElement("div");
+        div.className = "msg-group";
+        div.dataset.msgid = msg.id;
+
+        const initials = msg.username.charAt(0).toUpperCase();
+        const reactionsHtml = Object.entries(msg.reactions || {})
+          .filter(([e, u]) => u.length > 0)
+          .map(
+            ([
+              e,
+              u,
+            ]) => `<div class="reaction ${u.includes(myName) ? "mine" : ""}" data-emoji="${e}"
+      onclick="socket.emit('reaction',{channel:'${currentChannel}',msgId:${msg.id},emoji:'${e}'})">
+      <span>${e}</span><span class="rc">${u.length}</span></div>`,
+          )
+          .join("");
+
+        const imageHtml = msg.image
+          ? `<img class="msg-image" src="${msg.image}" alt="${escHtml(msg.filename || "이미지")}" onclick="openViewer(this.src)" />`
+          : "";
+
+        div.innerHTML = `
+    <div class="msg-actions">
+      ${["😂", "👍", "❤️", "🔥"].map((e) => `<button onclick="socket.emit('reaction',{channel:'${currentChannel}',msgId:${msg.id},emoji:'${e}'})">${e}</button>`).join("")}
+    </div>
+    <div class="msg-avatar" style="background:${msg.color};">${initials}</div>
+    <div class="msg-body">
+      <div class="msg-header">
+        <span class="msg-author" style="color:${msg.color};">${escHtml(msg.username)}</span>
+        <span class="msg-time">${msg.time}</span>
+      </div>
+      ${msg.text ? `<div class="msg-text">${escHtml(msg.text)}</div>` : ""}
+      ${imageHtml}
+      <div class="reactions-row">${reactionsHtml}</div>
+    </div>`;
+        box.appendChild(div);
+        if (scroll) scrollBottom();
+      }
+
+      // ───── 채널 전환 ─────
+      function switchChannel(ch, el) {
+        currentChannel = ch;
+        document
+          .querySelectorAll(".ch-item")
+          .forEach((i) => i.classList.remove("active"));
+        el.classList.add("active");
+        document.getElementById("ch-title").textContent = ch;
+        document.getElementById("ch-topic").textContent = TOPICS[ch] || "";
+        document.getElementById("msg-input").placeholder =
+          `#${ch} 에서 메시지 보내기`;
+        document.getElementById("messages").innerHTML =
+          '<div class="date-sep">오늘</div>';
+        socket.emit("switchChannel", ch);
+      }
+
+      // ───── 메시지 전송 ─────
+      function sendMsg() {
+        if (!socket) return;
+
+        // 이미지 대기 중이면 이미지 먼저 전송
+        if (pendingImage) {
+          socket.emit("image", {
+            channel: currentChannel,
+            dataUrl: pendingImage.dataUrl,
+            filename: pendingImage.filename,
+          });
+          cancelPaste();
+        }
+
+        const input = document.getElementById("msg-input");
+        const text = input.value.trim();
+        if (text) {
+          socket.emit("message", { channel: currentChannel, text });
+          input.value = "";
+        }
+      }
+
+      function handleKey(e) {
+        if (e.key === "Enter") sendMsg();
+      }
+
+      function onTyping() {
+        if (!socket) return;
+        socket.emit("typing", { channel: currentChannel });
+      }
+
+      // ───── 이미지 처리 공통 ─────
+      function processImageFile(file) {
+        if (!file || !file.type.startsWith("image/")) return;
+        if (file.size > 8 * 1024 * 1024) {
+          alert("이미지는 8MB 이하만 가능해요!");
+          return;
+        }
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          pendingImage = { dataUrl: e.target.result, filename: file.name };
+          document.getElementById("preview-img").src = e.target.result;
+          document.getElementById("preview-info").textContent =
+            `${file.name} (${(file.size / 1024).toFixed(0)}KB)`;
+          document.getElementById("paste-preview").classList.add("active");
+          document.getElementById("msg-input").focus();
+        };
+        reader.readAsDataURL(file);
+      }
+
+      function cancelPaste() {
+        pendingImage = null;
+        document.getElementById("paste-preview").classList.remove("active");
+        document.getElementById("preview-img").src = "";
+        document.getElementById("file-input").value = "";
+      }
+
+      // 파일 버튼
+      function handleFileSelect(e) {
+        processImageFile(e.target.files[0]);
+      }
+
+      // ───── 드래그 앤 드롭 ─────
+      const chatMain = document.getElementById("chat-main");
+      let dragCounter = 0;
+
+      chatMain.addEventListener("dragenter", (e) => {
+        e.preventDefault();
+        dragCounter++;
+        document.getElementById("drop-overlay").classList.add("active");
+      });
+      chatMain.addEventListener("dragleave", () => {
+        dragCounter--;
+        if (dragCounter <= 0) {
+          dragCounter = 0;
+          document.getElementById("drop-overlay").classList.remove("active");
+        }
+      });
+      chatMain.addEventListener("dragover", (e) => {
+        e.preventDefault();
+      });
+      chatMain.addEventListener("drop", (e) => {
+        e.preventDefault();
+        dragCounter = 0;
+        document.getElementById("drop-overlay").classList.remove("active");
+        const file = e.dataTransfer.files[0];
+        processImageFile(file);
+      });
+
+      // ───── Ctrl+V 붙여넣기 ─────
+      document.addEventListener("paste", (e) => {
+        if (
+          !document.getElementById("app").style.display ||
+          document.getElementById("app").style.display === "none"
+        )
+          return;
+        const items = e.clipboardData?.items;
+        if (!items) return;
+        for (const item of items) {
+          if (item.type.startsWith("image/")) {
+            e.preventDefault();
+            processImageFile(item.getAsFile());
+            break;
+          }
+        }
+      });
+
+      // ───── 이미지 뷰어 ─────
+      function openViewer(src) {
+        document.getElementById("viewer-img").src = src;
+        document.getElementById("img-viewer").classList.add("active");
+      }
+      function closeViewer() {
+        document.getElementById("img-viewer").classList.remove("active");
+      }
+
+      // ───── 기타 ─────
+      function updateTyping() {
+        const el = document.getElementById("typing-indicator");
+        const others = [...typingUsers].filter((u) => u !== myName);
+        if (others.length === 0) {
+          el.textContent = "";
+          return;
+        }
+        el.textContent =
+          others.length === 1
+            ? `${others[0]}님이 입력 중...`
+            : `${others.slice(0, -1).join(", ")}, ${others.at(-1)}님이 입력 중...`;
+      }
+
+      function toggleEmoji() {
+        emojiOpen = !emojiOpen;
+        document.getElementById("emoji-picker").style.display = emojiOpen
+          ? "block"
+          : "none";
+      }
+      function insertEmoji(e) {
+        const input = document.getElementById("msg-input");
+        input.value += e;
+        input.focus();
+      }
+      function scrollBottom() {
+        const box = document.getElementById("messages");
+        box.scrollTop = box.scrollHeight;
+      }
+      function escHtml(str) {
+        return str
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;");
+      }
+
+      document
+        .getElementById("username-input")
+        .addEventListener("keydown", (e) => {
+          if (e.key === "Enter") joinChat();
+        });
+    </script>
+  </body>
+</html>
