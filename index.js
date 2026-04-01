@@ -1,8 +1,8 @@
-const express = require("express"); // Express 프레임워크 로드
-const http = require("http"); // HTTP 모듈 로드
-const { Server } = require("socket.io"); // Socket.io 클래스 로드
-const path = require("path"); // 경로 처리 모듈 로드
-const { ROOMS } = require("./chat-app/data/channels");
+import express from "express";
+import http from "http";
+import { Server } from "socket.io";
+import path from "path";
+import { ROOMS } from "./data/channels";
 
 const app = express();
 const server = http.createServer(app);

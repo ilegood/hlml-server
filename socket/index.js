@@ -1,6 +1,6 @@
-const chat = require("./chat");
-const user = require("./user");
-const channel = require("./channel");
+import chat from "./chat.js";
+import user from "./user.js";
+import channel from "./channels.js";
 
 // 기능별 파일 연결
 module.exports = (io) => {

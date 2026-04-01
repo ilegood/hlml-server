@@ -1,4 +1,4 @@
-const { messages } = require("../data/messages");
+import { messages } from "../data/messages.js";
 
 // 메세지 전용
 module.exports = (io, socket) => {
