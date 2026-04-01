@@ -1,0 +1,90 @@
+body {
+  margin: 0;
+  font-family: sans-serif;
+  background: #f7f7f7;
+}
+
+.header {
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #111;
+  color: white;
+}
+
+.container {
+  max-width: 600px;
+  margin: 30px auto;
+}
+
+input {
+  width: 100%;
+  margin-bottom: 10px;
+  padding: 8px;
+}
+
+/* 🔥 카테고리 가로 */
+.category-row {
+  display: flex;
+  gap: 15px;
+  flex-wrap: wrap;
+}
+
+/* 🔥 wrapper 기준점 */
+.category-wrapper {
+  position: relative;
+}
+
+/* 🔥 카테고리 버튼 */
+.category-title {
+  cursor: pointer;
+  padding: 6px 10px;
+  background: #eee;
+}
+
+/* 🔥 드롭다운 (핵심) */
+.category-dropdown {
+  display: none;
+  position: absolute; /* 🔥 떠있는 UI */
+  top: 35px;
+  left: 0;
+  background: white;
+  padding: 10px;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+  z-index: 100;
+  min-width: 100px;
+}
+
+/* 🔥 옵션 */
+.tag-btn {
+  padding: 6px 10px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.tag-btn:hover {
+  background: #eee;
+}
+
+/* 선택 */
+.tag-btn.active {
+  background: #111;
+  color: white;
+}
+
+/* 카드 */
+.card {
+  background: white;
+  padding: 10px;
+  margin-bottom: 10px;
+  border-radius: 8px;
+}
+
+/* 표시용 */
+.tag {
+  background: #eee;
+  padding: 2px 6px;
+  margin-right: 5px;
+  font-size: 11px;
+}
