@@ -92,9 +92,15 @@ function joinChat() {
     renderMembers(users);
   });
 
-  socket.on("hosts", (h) => {
-    hosts = h;
+  socket.on("serverHost", (host) => {
+    serverHost = host;
     renderHostCrowns();
+    renderMembers(lastUsers);
+  });
+
+  // 서버로부터 방 목록 수신
+  socket.on("rooms", (rooms) => {
+    renderRoomList(rooms);
   });
 
   // 이름 색상 업데이트 반영
@@ -189,9 +195,9 @@ function appendMsg(msg, scroll) {
   div.className = "msg-group";
   div.dataset.msgid = String(msg.id);
 
-  const isHost = hosts[currentChannel] === msg.username;
+  const isHost = serverHost === msg.username;
   const isMe = msg.username === myName;
-  const isHostMe = hosts[currentChannel] === myName;
+  const isHostMe = serverHost === myName;
 
   // 답장 정보가 있는 경우 상단바 렌더링
   let replyHtml = "";
@@ -246,7 +252,7 @@ ${editBtn}${delBtn}
 ${replyHtml}
 <div class="msg-header">
   <span class="msg-author" data-author="${escAttr(msg.username)}" style="color:${escAttr(msg.nameColor)}">${esc(msg.username)}</span>
-  ${isHost ? '<span class="host-crown">👑</span>' : ""}
+  ${isHost ? '<span class="host-crown" title="서버 방장">👑</span>' : ""}
   <span class="msg-time">${msg.time}</span>
 </div>
 ${textHtml}${imageHtml}
@@ -271,9 +277,34 @@ function renderHostCrowns() {
   document.querySelectorAll(".host-crown").forEach((el) => {
     const author = el.closest(".msg-body")?.querySelector(".msg-author")
       ?.dataset.author;
-    el.style.display = author && hosts[currentChannel] === author ? "" : "none";
+    el.style.display = author && serverHost === author ? "" : "none";
   });
-  renderMembers(lastUsers);
+}
+
+// 오른쪽 방 목록 렌더링
+function renderRoomList(rooms) {
+  const container = document.getElementById("room-list-container");
+  if (!container) return;
+  container.innerHTML = "";
+  rooms.forEach((room) => {
+    const el = document.createElement("div");
+    el.className = `room-item ${currentChannel === room ? "active" : ""}`;
+    el.innerHTML = `<span class="room-hash">#</span> <span class="room-name">${esc(room)}</span>`;
+    el.onclick = () => {
+      // 모든 room-item에서 active 제거
+      document
+        .querySelectorAll(".room-item")
+        .forEach((r) => r.classList.remove("active"));
+      el.classList.add("active");
+
+      // 채널 이동 로직 (기존 함수 재사용)
+      const sidebarItem = Array.from(
+        document.querySelectorAll(".ch-item"),
+      ).find((i) => i.textContent.includes(room));
+      switchChannel(room, sidebarItem);
+    };
+    container.appendChild(el);
+  });
 }
 
 let lastUsers = [];
@@ -282,7 +313,7 @@ function renderMembers(users) {
   lastUsers = users;
   const div = document.getElementById("members-online");
   div.innerHTML = "";
-  const isHostMe = hosts[currentChannel] === myName;
+  const isHostMe = serverHost === myName;
   users.forEach((u) => {
     const el = document.createElement("div");
     el.className = "mem-item";
@@ -290,7 +321,7 @@ function renderMembers(users) {
       isHostMe && u.username !== myName
         ? `<button class="kick-btn" onclick="kickUser('${escAttr(u.username)}')">추방</button>`
         : "";
-    const isH = hosts[currentChannel] === u.username;
+    const isH = serverHost === u.username;
     el.innerHTML = `
 <div class="mem-avatar" style="background:${escAttr(u.nameColor)}">
   ${esc(u.username.charAt(0).toUpperCase())}

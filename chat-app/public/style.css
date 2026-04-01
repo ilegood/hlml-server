@@ -738,7 +738,43 @@ body {
   padding: 12px 8px;
   overflow-y: auto;
   flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
 }
+
+/* 방 목록 스타일 (오른쪽 사이드바용) */
+#room-list-container {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.room-item {
+  padding: 6px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--t2);
+  font-size: 14px;
+  transition:
+    background 0.1s,
+    color 0.1s;
+}
+.room-item:hover,
+.room-item.active {
+  background: var(--bg4);
+  color: var(--t1);
+}
+.room-hash {
+  color: var(--t3);
+  font-weight: 500;
+}
+.room-item.active .room-hash {
+  color: var(--t2);
+}
+
 .member-list::-webkit-scrollbar {
   width: 4px;
 }

@@ -2,6 +2,7 @@ const express = require("express"); // Express 프레임워크 로드
 const http = require("http"); // HTTP 모듈 로드
 const { Server } = require("socket.io"); // Socket.io 클래스 로드
 const path = require("path"); // 경로 처리 모듈 로드
+const { ROOMS } = require("./chat-app/data/channels");
 
 const app = express();
 const server = http.createServer(app);
@@ -16,7 +17,7 @@ app.use(express.static(path.join(__dirname, "chat-app", "public")));
 const messages = {}; // 채널별 메시지 내역 저장소
 const users = new Map(); // 현재 접속 중인 소켓 정보 저장 (ID 기준)
 const members = new Map(); // 전체 유저 정보 저장 (닉네임 기준, 온라인/오프라인 상태 포함)
-const hosts = {}; // 채널별 방장(최초 입장자) 정보
+let serverHost = null; // 서버 전체 방장 (1명)
 
 io.on("connection", (socket) => {
   // 1. 채팅 입장 이벤트 처리
@@ -33,17 +34,18 @@ io.on("connection", (socket) => {
 
     socket.join(channel); // 해당 소켓을 소켓 룸(채널)에 입장시킴
 
-    // 채널에 방장이 없으면 입장한 유저를 방장으로 설정
-    if (!hosts[channel]) {
-      hosts[channel] = username;
+    // 서버 전체 방장이 없으면 첫 접속자를 방장으로 설정
+    if (!serverHost) {
+      serverHost = username;
     }
 
     if (!messages[channel]) messages[channel] = [];
 
-    // 클라이언트에 이전 메시지 내역, 유저 목록, 방장 정보 전송
+    // 클라이언트에 데이터 전송
+    socket.emit("rooms", ROOMS);
     socket.emit("history", { channel, messages: messages[channel] });
     io.emit("users", Array.from(members.values())); // 전체 멤버 목록 브로드캐스트
-    io.to(channel).emit("hosts", hosts);
+    io.emit("serverHost", serverHost);
 
     // 채널 내 다른 사람들에게 입장 알림 전송
     socket
@@ -65,8 +67,6 @@ io.on("connection", (socket) => {
       members.get(user.username).channel = newChannel;
     }
 
-    // 새 채널에 방장이 없으면 방장 설정
-    if (!hosts[newChannel]) hosts[newChannel] = user.username;
     if (!messages[newChannel]) messages[newChannel] = [];
 
     // 새 채널 내역 전송 및 정보 갱신
@@ -74,9 +74,8 @@ io.on("connection", (socket) => {
       channel: newChannel,
       messages: messages[newChannel],
     });
-
     io.emit("users", Array.from(members.values()));
-    io.to(newChannel).emit("hosts", hosts);
+    io.emit("serverHost", serverHost);
   });
 
   // 3. 메시지/이미지 공통 처리 함수
@@ -144,8 +143,8 @@ io.on("connection", (socket) => {
     );
     if (index > -1) {
       const msg = messages[channel][index];
-      // 본인이거나 방장인 경우에만 삭제 가능
-      if (msg.username === user.username || hosts[channel] === user.username) {
+      // 본인이거나 서버 방장인 경우에만 삭제 가능
+      if (msg.username === user.username || serverHost === user.username) {
         messages[channel].splice(index, 1);
         io.to(channel).emit("deleteMessage", { channel, msgId });
       }
@@ -185,7 +184,7 @@ io.on("connection", (socket) => {
   // 8. 유저 추방 (방장 전용)
   socket.on("kickUser", ({ username, channel }) => {
     const hostUser = users.get(socket.id);
-    if (hosts[channel] === hostUser?.username) {
+    if (serverHost === hostUser?.username) {
       members.delete(username); // 멤버 목록에서 완전 삭제
 
       const target = Array.from(users.values()).find(
@@ -213,13 +212,11 @@ io.on("connection", (socket) => {
 
       io.emit("users", Array.from(members.values()));
 
-      // 나간 사람이 방장이었다면 남은 인원 중 첫 번째 사람을 새 방장으로 임명
-      if (hosts[channel] === username) {
-        const remaining = Array.from(users.values()).filter(
-          (u) => u.channel === channel,
-        );
-        hosts[channel] = remaining.length > 0 ? remaining[0].username : null;
-        io.to(channel).emit("hosts", hosts);
+      // 나간 사람이 서버 방장이었다면 다음 접속자에게 권한 위임
+      if (serverHost === username) {
+        const remaining = Array.from(users.values());
+        serverHost = remaining.length > 0 ? remaining[0].username : null;
+        io.emit("serverHost", serverHost);
       }
     }
   });
