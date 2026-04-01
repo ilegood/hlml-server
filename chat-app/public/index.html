@@ -1,0 +1,280 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>GUDDY 채팅</title>
+    <script src="/socket.io/socket.io.js"></script>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <input
+      type="file"
+      id="file-input"
+      accept="image/*"
+      style="display: none"
+      onchange="handleFileSelect(event)"
+    />
+    <div class="img-viewer" id="img-viewer" onclick="closeViewer()">
+      <img id="viewer-img" src="" alt="" />
+    </div>
+
+    <!-- Color picker modal -->
+    <div class="color-modal" id="color-modal">
+      <div class="color-box">
+        <h3>이름 색상 변경</h3>
+        <div class="color-presets" id="color-presets"></div>
+        <div class="color-custom">
+          <label for="custom-color">직접 선택</label>
+          <input type="color" id="custom-color" value="#5865f2" />
+        </div>
+        <div class="color-modal-btns">
+          <button class="btn-cancel" onclick="closeColorModal()">취소</button>
+          <button class="btn-confirm" onclick="applyColor()">적용</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Login -->
+    <div id="login-screen">
+      <div class="login-box">
+        <h1>👋 GUDDY 채팅</h1>
+        <p>닉네임을 입력하고 채팅에 참여하세요</p>
+        <label>닉네임</label>
+        <input
+          id="username-input"
+          type="text"
+          placeholder="예: 땅콩피자"
+          maxlength="20"
+        />
+        <button class="login-btn" onclick="joinChat()">입장하기</button>
+      </div>
+    </div>
+
+    <!-- App -->
+    <div id="app">
+      <div class="layout">
+        <!-- Server icons -->
+        <div class="server-list">
+          <div class="srv-icon active">🏠</div>
+          <div class="srv-sep"></div>
+          <div class="srv-icon">🎮</div>
+          <div class="srv-icon">🎵</div>
+          <div class="srv-sep"></div>
+          <div class="srv-icon" style="font-size: 24px; color: var(--online)">
+            +
+          </div>
+        </div>
+
+        <!-- Channel sidebar -->
+        <div class="ch-sidebar" id="ch-sidebar">
+          <div class="srv-header">GUDDY 커뮤니티 <span>∨</span></div>
+          <div class="ch-list" id="ch-list">
+            <div class="ch-cat">▾ 일반</div>
+            <div
+              class="ch-item active"
+              data-ch="일반"
+              onclick="switchChannel('일반', this)"
+            >
+              <span>#</span>일반
+            </div>
+            <div
+              class="ch-item"
+              data-ch="자유수다"
+              onclick="switchChannel('자유수다', this)"
+            >
+              <span>#</span>자유수다
+            </div>
+            <div
+              class="ch-item"
+              data-ch="정보공유"
+              onclick="switchChannel('정보공유', this)"
+            >
+              <span>#</span>정보공유
+            </div>
+            <div class="ch-cat">▾ 개발</div>
+            <div
+              class="ch-item"
+              data-ch="개발잡담"
+              onclick="switchChannel('개발잡담', this)"
+            >
+              <span>#</span>개발잡담
+            </div>
+            <div
+              class="ch-item"
+              data-ch="코드리뷰"
+              onclick="switchChannel('코드리뷰', this)"
+            >
+              <span>#</span>코드리뷰
+            </div>
+            <div class="ch-cat">▾ 미디어</div>
+            <div
+              class="ch-item"
+              data-ch="짤방"
+              onclick="switchChannel('짤방', this)"
+            >
+              <span>🖼</span>짤방
+            </div>
+          </div>
+          <div class="user-panel">
+            <div
+              class="my-avatar"
+              id="my-avatar"
+              style="background: var(--accent)"
+              onclick="openColorModal()"
+            >
+              나
+              <div class="status-dot" style="background: var(--online)"></div>
+            </div>
+            <div style="flex: 1; min-width: 0">
+              <div class="panel-name" id="my-uname">닉네임</div>
+              <div class="panel-tag">온라인 · 색 변경 클릭</div>
+            </div>
+            <button
+              class="icon-btn"
+              id="notif-btn"
+              onclick="toggleNotif()"
+              title="알림"
+            >
+              🔔
+            </button>
+            <button
+              class="icon-btn"
+              onclick="openColorModal()"
+              title="이름 색 변경"
+            >
+              🎨
+            </button>
+          </div>
+        </div>
+        <!-- .ch-sidebar 종료 -->
+
+        <!-- 왼쪽 사이드바 크기 조절 핸들 -->
+        <div class="resizer" id="ch-resizer"></div>
+
+        <!-- Chat main -->
+        <div class="chat-main" id="chat-main">
+          <div class="drop-overlay" id="drop-overlay">
+            <span>🖼</span>
+            <p>이미지를 여기에 놓으세요</p>
+          </div>
+
+          <div class="chat-header">
+            <span style="color: var(--t3); font-size: 18px">#</span>
+            <span class="ch-name" id="ch-title">일반</span>
+            <span class="ch-topic" id="ch-topic">자유롭게 이야기를 나눠요</span>
+            <div class="header-right">
+              <div class="search-bar" id="search-bar">
+                <span style="color: var(--t3)">🔍</span>
+                <input
+                  id="search-input"
+                  placeholder="메시지 검색..."
+                  oninput="doSearch()"
+                  onkeydown="searchKey(event)"
+                />
+                <span class="search-count" id="search-count"></span>
+                <button
+                  class="icon-btn"
+                  onclick="closeSearch()"
+                  style="font-size: 14px"
+                >
+                  ✕
+                </button>
+              </div>
+              <button class="icon-btn" onclick="toggleSearch()" title="검색">
+                🔍
+              </button>
+              <button
+                class="icon-btn"
+                onclick="toggleMemberList()"
+                title="멤버"
+              >
+                👥
+              </button>
+            </div>
+          </div>
+
+          <div class="messages" id="messages">
+            <div class="date-sep">오늘</div>
+          </div>
+
+          <div id="typing-indicator"></div>
+          <div class="reply-bar" id="reply-bar">
+            <span style="font-size: 14px">↩</span>
+            <div class="rb-info">
+              <span class="rb-author" id="rb-author"></span>
+              <span> 에게 답장: </span>
+              <span class="rb-text" id="rb-text"></span>
+            </div>
+            <button onclick="cancelReply()">✕</button>
+          </div>
+
+          <div class="chat-input-area">
+            <div class="paste-preview" id="paste-preview">
+              <img id="preview-img" src="" alt="" />
+              <div class="pi-info" id="preview-info">이미지 준비됨</div>
+              <button class="pi-cancel" onclick="cancelPaste()">✕</button>
+            </div>
+            <div class="input-wrap">
+              <button
+                class="inp-btn"
+                onclick="document.getElementById('file-input').click()"
+                title="파일 업로드"
+              >
+                +
+              </button>
+              <input
+                id="msg-input"
+                type="text"
+                placeholder="#일반 에서 메시지 보내기"
+                onkeydown="handleKey(event)"
+                oninput="onTyping()"
+                maxlength="1000"
+              />
+              <button class="inp-btn" onclick="toggleEmoji()">😊</button>
+              <button class="inp-btn" onclick="sendMsg()">➤</button>
+            </div>
+            <div class="emoji-picker" id="emoji-picker">
+              <div class="ep-label">빠른 이모지</div>
+              <div class="ep-grid">
+                <span onclick="ins('😂')">😂</span>
+                <span onclick="ins('❤️')">❤️</span>
+                <span onclick="ins('🔥')">🔥</span>
+                <span onclick="ins('👍')">👍</span>
+                <span onclick="ins('🎉')">🎉</span>
+                <span onclick="ins('😭')">😭</span>
+                <span onclick="ins('🤔')">🤔</span>
+                <span onclick="ins('✅')">✅</span>
+                <span onclick="ins('🙏')">🙏</span>
+                <span onclick="ins('💯')">💯</span>
+                <span onclick="ins('😎')">😎</span>
+                <span onclick="ins('🚀')">🚀</span>
+                <span onclick="ins('👀')">👀</span>
+                <span onclick="ins('💀')">💀</span>
+                <span onclick="ins('🥳')">🥳</span>
+                <span onclick="ins('😍')">😍</span>
+                <span onclick="ins('🤣')">🤣</span>
+                <span onclick="ins('😤')">😤</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <!-- .chat-main 종료 -->
+
+        <!-- 오른쪽 멤버 목록 크기 조절 핸들 -->
+        <div class="resizer" id="mem-resizer"></div>
+
+        <!-- Member list -->
+        <div class="member-list" id="member-list">
+          <div class="mem-cat" id="online-label">온라인 — 0</div>
+          <div id="members-online"></div>
+        </div>
+        <!-- .member-list 종료 -->
+      </div>
+      <!-- .layout 종료 -->
+    </div>
+    <!-- #app 종료 -->
+
+    <script src="script.js"></script>
+  </body>
+</html>
