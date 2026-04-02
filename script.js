@@ -272,6 +272,7 @@ if (document.getElementById("cardList")) {
     });
   }
 
+  // 검색
   function applyFilters() {
     const data = loadData();
     const keyword = searchInput.value.toLowerCase();
