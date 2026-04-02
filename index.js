@@ -2,7 +2,7 @@ import express from "express";
 import http from "http";
 import { Server } from "socket.io";
 import path from "path";
-import { ROOMS } from "./data/channels";
+import { ROOMS } from "./socket/channels";
 
 const app = express();
 const server = http.createServer(app);
