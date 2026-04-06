@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>친구 목록 사이드바</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <div class="sidebar-wrapper">
+      <!-- 사이드바 토글 버튼 -->
+      <button class="toggle-btn" id="toggleBtn">친구 목록 닫기 〉</button>
+
+      <!-- 사이드바 본체 -->
+      <div class="friend-sidebar" id="sidebarContent">
+        <div class="search-section">
+          <input type="text" placeholder="친구 검색" class="search-input" />
+        </div>
+
+        <div class="scroll-container">
+          <div class="category-section">
+            <h3 class="category-title">온라인 ▾</h3>
+            <table class="friend-table">
+              <tbody id="onlineList">
+                <!-- JS에서 온라인 친구 목록이 여기에 들어갑니다 -->
+              </tbody>
+            </table>
+          </div>
+
+          <div class="category-section">
+            <h3 class="category-title">오프라인</h3>
+            <table class="friend-table">
+              <tbody id="offlineList">
+                <!-- JS에서 오프라인 친구 목록이 여기에 들어갑니다 -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- 친구 상세보기 팝업 (초기에는 숨겨짐) -->
+        <div class="friend-detail-card hidden" id="detailCard">
+          <div class="detail-header">
+            <div class="detail-avatar-large"></div>
+          </div>
+          <div class="detail-body">
+            <h4 id="detailName">이름</h4>
+            <p id="detailProfile">상태 메시지</p>
+            <div class="detail-icons">
+              <span>ㅇㄴ화ㅓㄹㄴ머 | ㅇ노라ㅓㄴㅇㄴㅇ</span><br />
+              <span>ㅇㄴㅇㄴㅇㄷㅇㄴㅇㄷㄴㅇㄴ</span>
+            </div>
+            <button class="detail-action-btn">메모</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script src="script.js"></script>
+    <!-- JS 파일 연결 -->
+  </body>
+</html>
