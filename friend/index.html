@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>친구 목록 사이드바</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <div class="sidebar-wrapper">
+      <!-- 사이드바 토글 버튼 -->
+      <button class="toggle-btn" id="toggleBtn">〉</button>
+
+      <!-- 사이드바 컨테이너 -->
+      <div class="friend-sidebar" id="sidebarContent">
+        <div class="search-section">
+          <input type="text" placeholder="친구 검색" class="search-input" />
+        </div>
+
+        <div class="scroll-container">
+          <div class="category-section">
+            <h3 class="category-title">온라인 ▾</h3>
+            <table class="friend-table">
+              <tbody id="onlineList">
+                <!-- JS에서 온라인 친구 목록이 여기에 들어갑니다 ai 이용 js -->
+              </tbody>
+            </table>
+          </div>
+
+          <div class="category-section">
+            <h3 class="category-title">오프라인</h3>
+            <table class="friend-table">
+              <tbody id="offlineList">
+                <!-- JS에서 오프라인 친구 목록이 여기에 들어갑니다 ai 이용 js -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- 친구 상세보기 팝업 (초기에는 숨겨짐) -->
+        <div class="friend-detail-card hidden" id="detailCard">
+          <div class="detail-header">
+            <div class="detail-avatar-large"></div>
+          </div>
+          <div class="detail-body">
+            <h4 id="detailName">이름</h4>
+            <p id="detailProfile">상태 메시지</p>
+            <div class="detail-icons">
+              <span>안녕하세요.</span><br />
+              <span></span>
+            </div>
+
+            <!-- 메모 전체 ai 사용-->
+
+            <!-- 저장된 메모 가 표시되는 영역 (추가됨) -->
+            <div id="memoDisplayArea" class="memo-display hidden">
+              <p id="savedMemoText"></p>
+            </div>
+
+            <!-- 기본 메모 버튼 (수정됨: id 속성 추가) -->
+            <button class="detail-action-btn" id="memoBtn">메모 추가</button>
+
+            <!-- 메모 입력 영역 (추가됨) -->
+            <div id="memoInputArea" class="memo-input-container hidden">
+              <textarea
+                id="memoInput"
+                placeholder="이 친구에 대한 메모를 남겨보세요..."
+              ></textarea>
+              <div class="memo-actions">
+                <button id="saveMemoBtn" class="save-btn">저장</button>
+                <button id="cancelMemoBtn" class="cancel-btn">취소</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script src="script.js"></script>
+    <!-- JS 파일 연결 -->
+  </body>
+</html>
