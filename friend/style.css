@@ -7,7 +7,7 @@ body {
 .sidebar-wrapper {
   position: fixed;
   right: 0;
-  top: 0;
+  top: 40px;
   height: 1080px;
   display: flex;
   align-items: flex-start;
@@ -226,4 +226,68 @@ body {
 }
 .detail-action-btn:hover {
   background-color: #f5f5f5;
+}
+
+/* === 메모 기능 관련 추가 디자인 === */
+.memo-display {
+  background-color: #f9f9f9;
+  padding: 10px;
+  margin-bottom: 15px;
+  font-size: 12px;
+  color: #333;
+  border-radius: 0 4px 4px 0;
+  word-break: break-all;
+}
+.memo-display p {
+  margin: 0 !important;
+  color: #333 !important;
+}
+
+.memo-input-container {
+  margin-top: 10px;
+}
+.memo-input-container textarea {
+  width: 100%;
+  height: 60px;
+  padding: 10px;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  resize: none;
+  box-sizing: border-box;
+  font-family: inherit;
+  font-size: 12px;
+}
+.memo-input-container textarea:focus {
+  outline: none;
+  border-color: #1abc9c;
+}
+
+.memo-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+.save-btn,
+.cancel-btn {
+  flex: 1;
+  padding: 8px;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: bold;
+}
+.save-btn {
+  background-color: #1abc9c;
+  color: white;
+}
+.save-btn:hover {
+  background-color: #16a085;
+}
+.cancel-btn {
+  background-color: #eee;
+  color: #555;
+}
+.cancel-btn:hover {
+  background-color: #ddd;
 }
