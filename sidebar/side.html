@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Document</title>
+    <link rel="stylesheet" href="side.css" />
+  </head>
+  <body>
+    <div id="sidebar_container">
+      <div id="sidebar">
+        <div class="logo">
+          <img src="./assets/로고.png" alt="logo" />
+          <div class="name">할래말래</div>
+        </div>
+        <ul class="font">
+          <div class="board">
+            <img src="./assets/Nav Item.png" alt="" />
+            <button>대시보드</button>
+          </div>
+          <div class="postit">
+            <img src="./assets/2.png" alt="" />
+            <button>게시글쓰기</button>
+          </div>
+          <div class="group">
+            <img src="./assets/3.png" alt="" />
+            <button>그룹</button>
+          </div>
+          <div class="chat">
+            <img src="./assets/4.png" alt="" />
+            <button>메시지</button>
+          </div>
+          <div class="mypage">
+            <img src="./assets/5.png" alt="" />
+            <button>마이페이지</button>
+          </div>
+        </ul>
+        <div class="bottom">
+          <div class="dark">
+            <img src="./assets/6.png" alt="" />
+            <button id="dark">다크모드</button>
+
+            <label class="switch">
+              <input type="checkbox" id="darkToggle" />
+              <span class="slider"></span>
+            </label>
+          </div>
+          <button id="logout">로그아웃</button>
+        </div>
+      </div>
+    </div>
+    <div id="content"></div>
+
+    <script src="side.js"></script>
+  </body>
+</html>
