@@ -1,0 +1,28 @@
+{
+  "name": "hlml-server",
+  "version": "1.0.0",
+  "description": "프로젝트 소개\r 2인 이상에서 함께 식사 할 수 있게 도와주는 사이트",
+  "homepage": "https://github.com/hanuel0119/hlml-server#readme",
+  "bugs": {
+    "url": "https://github.com/hanuel0119/hlml-server/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/hanuel0119/hlml-server.git"
+  },
+  "license": "ISC",
+  "author": "",
+  "type": "module",
+  "scripts": {
+    "dev": "nodemon app.js"
+  },
+  "dependencies": {
+    "axios": "^1.15.0",
+    "cors": "^2.8.6",
+    "express": "^5.2.1",
+    "mysql2": "^3.20.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.14"
+  }
+}
