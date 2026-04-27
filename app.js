@@ -1,8 +1,16 @@
 import express from "express";
 import mysql from "mysql2/promise";
 import cors from "cors";
+import fs from "fs";
+import path from "path";
 
 const app = express();
+
+// 업로드 폴더 생성
+if (!fs.existsSync("./uploads")) {
+  fs.mkdirSync("./uploads");
+}
+
 const pool = mysql.createPool({
   host: "localhost",
   user: "root",
@@ -14,6 +22,7 @@ const pool = mysql.createPool({
 
 app.use(cors());
 app.use(express.json({ limit: "50mb" }));
+app.use("/uploads", express.static("uploads"));
 
 const parseJson = (data, fallback) => {
   if (!data) return fallback;
@@ -52,7 +61,7 @@ const parsePost = (p) => ({
 app.get("/api/posts", async (req, res) => {
   try {
     const [rows] = await pool.query(
-      "SELECT * FROM posts ORDER BY createdAt DESC",
+      "SELECT * FROM posts ORDER BY created_at DESC",
     );
     res.json(rows.map(parsePost));
   } catch (err) {
@@ -62,7 +71,7 @@ app.get("/api/posts", async (req, res) => {
 
 app.get("/api/posts/:id", async (req, res) => {
   try {
-    const [rows] = await pool.query("SELECT * FROM posts WHERE id = ?", [
+    const [rows] = await pool.query("SELECT * FROM posts WHERE post_id = ?", [
       req.params.id,
     ]);
     rows.length
@@ -75,23 +84,12 @@ app.get("/api/posts/:id", async (req, res) => {
 
 app.post("/api/posts", async (req, res) => {
   const b = req.body;
-
-  // 모집 인원 검증 (2~10명)
   const capacity = b.capacity || 4;
-  if (capacity < 2 || capacity > 10) {
-    return res
-      .status(400)
-      .json({ error: "모집 인원은 2명에서 10명 사이여야 합니다." });
-  }
-
   const author = b.author || "익명";
-  // 작성자를 참여자 명단에 기본 포함
-  const joinedBy = JSON.stringify([author]);
-  const participants = 1;
 
   try {
     const [result] = await pool.query(
-      "INSERT INTO posts (title, content, date, time, place, capacity, categories, image, author, comments, likedBy, joinedBy, participants) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, '[]', '[]', ?, ?)",
+      "INSERT INTO posts (title, content, date, time, place, capacity, categories, image, author, participants) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
       [
         b.title,
         b.content,
@@ -102,8 +100,7 @@ app.post("/api/posts", async (req, res) => {
         JSON.stringify(b.categories || {}),
         b.image || null,
         author,
-        joinedBy,
-        participants,
+        1, // 작성자 본인 포함
       ],
     );
     res.json({ success: true, id: result.insertId });
@@ -117,84 +114,126 @@ app.put("/api/posts/:id", async (req, res) => {
   const id = req.params.id;
 
   try {
-    const [rows] = await pool.query("SELECT * FROM posts WHERE id = ?", [id]);
+    const [rows] = await pool.query("SELECT * FROM posts WHERE post_id = ?", [id]);
     if (rows.length === 0)
       return res.status(404).json({ error: "Post not found" });
     const old = rows[0];
 
     const val = (key, fallback) => (b[key] !== undefined ? b[key] : fallback);
 
-    // 데이터 안전하게 병합
-    let joinedByArray = val("joinedBy", parseJson(old.joinedBy, []));
-
-    // 작성자가 참여자 명단에서 빠지지 않도록 강제 적용
-    if (!joinedByArray.includes(old.author)) {
-      joinedByArray = [old.author, ...joinedByArray];
-    }
-
-    const joinedBy = JSON.stringify(joinedByArray);
-    const participants = joinedByArray.length;
-
-    const likedBy = JSON.stringify(val("likedBy", parseJson(old.likedBy, [])));
-    const comments = JSON.stringify(
-      val("comments", parseJson(old.comments, [])),
-    );
-    const likes = b.likedBy ? b.likedBy.length : val("likes", old.likes);
-    const status = val("status", old.status);
     const title = val("title", old.title);
     const content = val("content", old.content);
     const date = formatDate(val("date", old.date));
     const time = formatTime(val("time", old.time));
     const place = val("place", old.place);
     const capacity = val("capacity", old.capacity);
-    const categories = JSON.stringify(
-      val("categories", parseJson(old.categories, {})),
-    );
+    const status = val("status", old.status);
+    const categories = JSON.stringify(val("categories", parseJson(old.categories, {})));
     const image = val("image", old.image);
+    const participants = val("participants", old.participants);
     const edited = b.edited !== undefined ? (b.edited ? 1 : 0) : old.edited;
 
     const [result] = await pool.query(
       `UPDATE posts SET 
-        likedBy=?, joinedBy=?, comments=?, likes=?, participants=?, 
-        status=?, title=?, content=?, date=?, time=?, 
-        place=?, capacity=?, categories=?, image=?, edited=? 
-      WHERE id=?`,
+        title=?, content=?, date=?, time=?, place=?, 
+        capacity=?, status=?, categories=?, image=?, participants=?, edited=? 
+      WHERE post_id=?`,
       [
-        likedBy,
-        joinedBy,
-        comments,
-        likes,
-        participants,
-        status,
-        title,
-        content,
-        date,
-        time,
-        place,
-        capacity,
-        categories,
-        image,
-        edited,
-        id,
+        title, content, date, time, place,
+        capacity, status, categories, image, participants, edited, id
       ],
     );
 
     res.json({ success: true });
   } catch (err) {
-    console.error("PUT SQL Error:", err.message);
-    // 에러 메시지를 클라이언트에 상세히 전달
-    res
-      .status(500)
-      .json({ error: `DB Error: ${err.message}`, sqlState: err.sqlState });
+    res.status(500).json({ error: err.message });
   }
 });
 
 app.delete("/api/posts/:id", async (req, res) => {
   try {
-    await pool.query("DELETE FROM posts WHERE id = ?", [req.params.id]);
+    await pool.query("DELETE FROM posts WHERE post_id = ?", [req.params.id]);
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+// 회원가입 API 추가
+app.post("/users/register", async (req, res) => {
+  const { nickname, email, password, birthday, gender, phone_number } = req.body;
+
+  try {
+    const [result] = await pool.query(
+      "INSERT INTO users (nickname, email, password, birthday, gender, phone_number) VALUES (?, ?, ?, ?, ?, ?)",
+      [nickname, email, password, birthday, gender, phone_number]
+    );
+    res.json({ success: true, message: "회원가입 성공" });
+  } catch (err) {
+    console.error("Register Error:", err);
+    if (err.code === 'ER_DUP_ENTRY') {
+      res.status(400).json({ message: "이미 사용 중인 닉네임 또는 이메일입니다." });
+    } else {
+      res.status(500).json({ message: "회원가입 처리 중 오류가 발생했습니다." });
+    }
+  }
+});
+
+// 로그인 API 추가 (간단한 구현)
+app.post("/users/login", async (req, res) => {
+  const { email, password } = req.body;
+
+  try {
+    const [rows] = await pool.query(
+      "SELECT * FROM users WHERE email = ? AND password = ?",
+      [email, password]
+    );
+
+    if (rows.length > 0) {
+      const user = rows[0];
+      res.json({ 
+        success: true, 
+        token: "fake-jwt-token", // 실제 구현 시 JWT 발급 권장
+        user: { 
+          nickname: user.nickname, 
+          email: user.email,
+          bio: user.bio,
+          profile_img: user.profile_img
+        } 
+      });
+    } else {
+      res.status(401).json({ message: "이메일 또는 비밀번호가 일치하지 않습니다." });
+    }
+  } catch (err) {
+    res.status(500).json({ message: "로그인 처리 중 오류가 발생했습니다." });
+  }
+});
+
+// 프로필 수정 API 추가 (파일 저장 방식)
+app.put("/users/profile", async (req, res) => {
+  const { nickname, bio, email, profile_img } = req.body;
+  let finalImgPath = profile_img;
+
+  try {
+    // 만약 이미지가 Base64 데이터라면 파일로 저장
+    if (profile_img && profile_img.startsWith("data:image")) {
+      const base64Data = profile_img.replace(/^data:image\/\w+;base64,/, "");
+      const ext = profile_img.split(";")[0].split("/")[1];
+      const fileName = `profile_${Date.now()}.${ext}`;
+      const filePath = path.join("uploads", fileName);
+      
+      fs.writeFileSync(filePath, base64Data, 'base64');
+      finalImgPath = `/uploads/${fileName}`; // DB에는 짧은 경로 저장
+    }
+
+    await pool.query(
+      "UPDATE users SET nickname = ?, bio = ?, profile_img = ? WHERE email = ?",
+      [nickname, bio, finalImgPath, email]
+    );
+    res.json({ success: true, nickname, bio, profile_img: finalImgPath });
+  } catch (err) {
+    console.error("Profile Update Error:", err);
+    res.status(500).json({ message: "프로필 수정 중 오류가 발생했습니다." });
   }
 });
 
