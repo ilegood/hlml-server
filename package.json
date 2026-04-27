@@ -3,7 +3,8 @@
   "version": "1.0.0",
   "description": "2인 이상이서 함께 활동 할 수 있게 도와주는 사이트",
   "scripts": {
-    "dev": "nodemon app.js"
+    "dev": "nodemon -L src/app.js",
+    "start": "node src/app.js"
   },
   "repository": {
     "type": "git",
@@ -13,29 +14,18 @@
   "author": "",
   "license": "ISC",
   "type": "module",
-<<<<<<< Updated upstream
   "bugs": {
     "url": "https://github.com/ilegood/hlml-server/issues"
-=======
-  "scripts": {
-    "dev": "nodemon src/app.js",
-    "start": "node src/app.js"
->>>>>>> Stashed changes
   },
   "homepage": "https://github.com/ilegood/hlml-server#readme",
   "dependencies": {
     "cors": "^2.8.6",
     "dotenv": "^17.4.1",
     "express": "^5.2.1",
-<<<<<<< Updated upstream
-    "socket": "^1.1.77",
-    "socket.io": "^4.8.3"
-=======
     "mysql2": "^3.20.0",
     "socket.io": "^4.8.3"
   },
   "devDependencies": {
     "nodemon": "^3.1.14"
->>>>>>> Stashed changes
   }
 }
