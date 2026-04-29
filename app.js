@@ -83,8 +83,12 @@ app.post("/users/login", async (req, res) => {
 // 유저 검색
 app.get("/users/search", async (req, res) => {
   const { q } = req.query;
+  const myId = req.headers['x-user-id'];
   try {
-    const [rows] = await pool.query("SELECT user_id as id, nickname, profile_img FROM users WHERE nickname LIKE ? AND is_deleted = FALSE", [`%${q}%`]);
+    const [rows] = await pool.query(
+      "SELECT user_id as id, nickname, profile_img FROM users WHERE nickname LIKE ? AND is_deleted = FALSE AND user_id != ?", 
+      [`%${q}%`, myId || 0]
+    );
     res.json(rows);
   } catch (err) { res.status(500).json({ message: "검색 실패" }); }
 });
@@ -124,15 +128,38 @@ app.get("/friends/requests", async (req, res) => {
 app.post("/friends/add", async (req, res) => {
   const { targetNickname } = req.body;
   const myId = req.headers['x-user-id'];
+
+  if (!myId) {
+    console.error("[Friend Add] Missing x-user-id header");
+    return res.status(401).json({ message: "로그인이 필요합니다." });
+  }
+
   try {
     const [users] = await pool.query("SELECT user_id FROM users WHERE nickname = ?", [targetNickname]);
     if (users.length === 0) return res.status(404).json({ message: "유저 없음" });
+    
     const targetId = users[0].user_id;
     if (myId == targetId) return res.status(400).json({ message: "본인에게 요청 불가" });
 
-    await pool.query("INSERT INTO user_relations (requester_id, target_id, status) VALUES (?, ?, 'pending') ON DUPLICATE KEY UPDATE status=status", [myId, targetId]);
+    // 이미 관계가 있는지 확인 (어느 방향이든)
+    const [existing] = await pool.query(
+      "SELECT * FROM user_relations WHERE (requester_id = ? AND target_id = ?) OR (requester_id = ? AND target_id = ?)",
+      [myId, targetId, targetId, myId]
+    );
+
+    if (existing.length > 0) {
+      const relation = existing[0];
+      if (relation.status === 'accepted') return res.status(400).json({ message: "이미 친구입니다." });
+      if (relation.status === 'pending') return res.status(400).json({ message: "이미 대기 중인 요청이 있습니다." });
+      if (relation.status === 'blocked') return res.status(400).json({ message: "차단된 관계입니다." });
+    }
+
+    await pool.query("INSERT INTO user_relations (requester_id, target_id, status) VALUES (?, ?, 'pending')", [myId, targetId]);
     res.json({ success: true });
-  } catch (err) { res.status(500).json({ message: "요청 실패" }); }
+  } catch (err) { 
+    console.error("[Friend Add Error]", err);
+    res.status(500).json({ message: "요청 실패: " + err.message }); 
+  }
 });
 
 // 친구 요청 수락
