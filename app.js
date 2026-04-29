@@ -6,7 +6,6 @@ import path from "path";
 
 const app = express();
 
-// 업로드 폴더 생성
 if (!fs.existsSync("./uploads")) {
   fs.mkdirSync("./uploads");
 }
@@ -24,32 +23,16 @@ app.use(cors());
 app.use(express.json({ limit: "50mb" }));
 app.use("/uploads", express.static("uploads"));
 
+// --- Helper Functions ---
 const parseJson = (data, fallback) => {
   if (!data) return fallback;
   if (typeof data === "string") {
-    try {
-      return JSON.parse(data);
-    } catch {
-      return fallback;
-    }
+    try { return JSON.parse(data); } catch { return fallback; }
   }
   return data;
 };
 
-// 날짜 형식을 YYYY-MM-DD로 정규화
-const formatDate = (d) => {
-  if (!d) return null;
-  const s = String(d);
-  return s.includes("T") ? s.split("T")[0] : s;
-};
-
-// 시간 형식을 HH:mm:ss 또는 HH:mm으로 정규화
-const formatTime = (t) => {
-  if (!t) return null;
-  const s = String(t);
-  return s.includes("T") ? s.split("T")[1].split(".")[0] : s;
-};
-
+// --- Post APIs (Existing) ---
 const parsePost = (p) => ({
   ...p,
   categories: parseJson(p.categories, {}),
@@ -60,181 +43,143 @@ const parsePost = (p) => ({
 
 app.get("/api/posts", async (req, res) => {
   try {
-    const [rows] = await pool.query(
-      "SELECT * FROM posts ORDER BY created_at DESC",
-    );
+    const [rows] = await pool.query("SELECT * FROM posts ORDER BY created_at DESC");
     res.json(rows.map(parsePost));
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 app.get("/api/posts/:id", async (req, res) => {
   try {
-    const [rows] = await pool.query("SELECT * FROM posts WHERE post_id = ?", [
-      req.params.id,
-    ]);
-    rows.length
-      ? res.json(parsePost(rows[0]))
-      : res.status(404).json({ error: "Not found" });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+    const [rows] = await pool.query("SELECT * FROM posts WHERE post_id = ?", [req.params.id]);
+    rows.length ? res.json(parsePost(rows[0])) : res.status(404).json({ error: "Not found" });
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.post("/api/posts", async (req, res) => {
-  const b = req.body;
-  const capacity = b.capacity || 4;
-  const author = b.author || "익명";
-
-  try {
-    const [result] = await pool.query(
-      "INSERT INTO posts (title, content, date, time, place, capacity, categories, image, author, participants) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-      [
-        b.title,
-        b.content,
-        formatDate(b.date),
-        formatTime(b.time),
-        b.place || "",
-        capacity,
-        JSON.stringify(b.categories || {}),
-        b.image || null,
-        author,
-        1, // 작성자 본인 포함
-      ],
-    );
-    res.json({ success: true, id: result.insertId });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-app.put("/api/posts/:id", async (req, res) => {
-  const b = req.body;
-  const id = req.params.id;
-
-  try {
-    const [rows] = await pool.query("SELECT * FROM posts WHERE post_id = ?", [id]);
-    if (rows.length === 0)
-      return res.status(404).json({ error: "Post not found" });
-    const old = rows[0];
-
-    const val = (key, fallback) => (b[key] !== undefined ? b[key] : fallback);
-
-    const title = val("title", old.title);
-    const content = val("content", old.content);
-    const date = formatDate(val("date", old.date));
-    const time = formatTime(val("time", old.time));
-    const place = val("place", old.place);
-    const capacity = val("capacity", old.capacity);
-    const status = val("status", old.status);
-    const categories = JSON.stringify(val("categories", parseJson(old.categories, {})));
-    const image = val("image", old.image);
-    const participants = val("participants", old.participants);
-    const edited = b.edited !== undefined ? (b.edited ? 1 : 0) : old.edited;
-
-    const [result] = await pool.query(
-      `UPDATE posts SET 
-        title=?, content=?, date=?, time=?, place=?, 
-        capacity=?, status=?, categories=?, image=?, participants=?, edited=? 
-      WHERE post_id=?`,
-      [
-        title, content, date, time, place,
-        capacity, status, categories, image, participants, edited, id
-      ],
-    );
-
-    res.json({ success: true });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-app.delete("/api/posts/:id", async (req, res) => {
-  try {
-    await pool.query("DELETE FROM posts WHERE post_id = ?", [req.params.id]);
-    res.json({ success: true });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// 회원가입 API 추가
+// --- User Auth APIs ---
 app.post("/users/register", async (req, res) => {
   const { nickname, email, password, birthday, gender, phone_number } = req.body;
-
   try {
-    const [result] = await pool.query(
+    await pool.query(
       "INSERT INTO users (nickname, email, password, birthday, gender, phone_number) VALUES (?, ?, ?, ?, ?, ?)",
       [nickname, email, password, birthday, gender, phone_number]
     );
-    res.json({ success: true, message: "회원가입 성공" });
-  } catch (err) {
-    console.error("Register Error:", err);
-    if (err.code === 'ER_DUP_ENTRY') {
-      res.status(400).json({ message: "이미 사용 중인 닉네임 또는 이메일입니다." });
-    } else {
-      res.status(500).json({ message: "회원가입 처리 중 오류가 발생했습니다." });
-    }
-  }
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ message: "가입 실패" }); }
 });
 
-// 로그인 API 추가 (간단한 구현)
 app.post("/users/login", async (req, res) => {
   const { email, password } = req.body;
-
   try {
-    const [rows] = await pool.query(
-      "SELECT * FROM users WHERE email = ? AND password = ?",
-      [email, password]
-    );
-
+    const [rows] = await pool.query("SELECT * FROM users WHERE email = ? AND password = ?", [email, password]);
     if (rows.length > 0) {
-      const user = rows[0];
-      res.json({ 
-        success: true, 
-        token: "fake-jwt-token", // 실제 구현 시 JWT 발급 권장
-        user: { 
-          nickname: user.nickname, 
-          email: user.email,
-          bio: user.bio,
-          profile_img: user.profile_img
-        } 
-      });
-    } else {
-      res.status(401).json({ message: "이메일 또는 비밀번호가 일치하지 않습니다." });
-    }
-  } catch (err) {
-    res.status(500).json({ message: "로그인 처리 중 오류가 발생했습니다." });
-  }
+      const u = rows[0];
+      res.json({ success: true, token: "fake-jwt", user: { id: u.user_id, nickname: u.nickname, email: u.email, bio: u.bio, profile_img: u.profile_img } });
+    } else { res.status(401).json({ message: "로그인 실패" }); }
+  } catch (err) { res.status(500).json({ message: "서버 오류" }); }
 });
 
-// 프로필 수정 API 추가 (파일 저장 방식)
-app.put("/users/profile", async (req, res) => {
-  const { nickname, bio, email, profile_img } = req.body;
-  let finalImgPath = profile_img;
+// --- Friend & Relation APIs ---
 
+// 유저 검색
+app.get("/users/search", async (req, res) => {
+  const { q } = req.query;
   try {
-    // 만약 이미지가 Base64 데이터라면 파일로 저장
-    if (profile_img && profile_img.startsWith("data:image")) {
-      const base64Data = profile_img.replace(/^data:image\/\w+;base64,/, "");
-      const ext = profile_img.split(";")[0].split("/")[1];
-      const fileName = `profile_${Date.now()}.${ext}`;
-      const filePath = path.join("uploads", fileName);
-      
-      fs.writeFileSync(filePath, base64Data, 'base64');
-      finalImgPath = `/uploads/${fileName}`; // DB에는 짧은 경로 저장
-    }
+    const [rows] = await pool.query("SELECT user_id as id, nickname, profile_img FROM users WHERE nickname LIKE ? AND is_deleted = FALSE", [`%${q}%`]);
+    res.json(rows);
+  } catch (err) { res.status(500).json({ message: "검색 실패" }); }
+});
 
+// 친구 목록 (Accepted 상태만)
+app.get("/friends", async (req, res) => {
+  const myId = req.headers['x-user-id'];
+  if (!myId) return res.json([]);
+  try {
+    const [rows] = await pool.query(`
+      SELECT u.user_id as id, u.nickname as name, u.profile_img, u.bio as statusMessage, 'online' as status
+      FROM users u
+      JOIN user_relations r ON (u.user_id = r.target_id OR u.user_id = r.requester_id)
+      WHERE (r.requester_id = ? OR r.target_id = ?) 
+      AND r.status = 'accepted' 
+      AND u.user_id != ?
+    `, [myId, myId, myId]);
+    res.json(rows);
+  } catch (err) { res.status(500).json({ message: "조회 실패" }); }
+});
+
+// 받은 친구 요청 목록
+app.get("/friends/requests", async (req, res) => {
+  const myId = req.headers['x-user-id'];
+  try {
+    const [rows] = await pool.query(`
+      SELECT u.user_id as id, u.nickname as name, u.profile_img 
+      FROM users u 
+      JOIN user_relations r ON u.user_id = r.requester_id 
+      WHERE r.target_id = ? AND r.status = 'pending'
+    `, [myId]);
+    res.json(rows);
+  } catch (err) { res.status(500).json({ message: "요청 조회 실패" }); }
+});
+
+// 친구 요청 보내기
+app.post("/friends/add", async (req, res) => {
+  const { targetNickname } = req.body;
+  const myId = req.headers['x-user-id'];
+  try {
+    const [users] = await pool.query("SELECT user_id FROM users WHERE nickname = ?", [targetNickname]);
+    if (users.length === 0) return res.status(404).json({ message: "유저 없음" });
+    const targetId = users[0].user_id;
+    if (myId == targetId) return res.status(400).json({ message: "본인에게 요청 불가" });
+
+    await pool.query("INSERT INTO user_relations (requester_id, target_id, status) VALUES (?, ?, 'pending') ON DUPLICATE KEY UPDATE status=status", [myId, targetId]);
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ message: "요청 실패" }); }
+});
+
+// 친구 요청 수락
+app.post("/friends/accept", async (req, res) => {
+  const { targetId } = req.body;
+  const myId = req.headers['x-user-id'];
+  try {
+    await pool.query("UPDATE user_relations SET status = 'accepted' WHERE requester_id = ? AND target_id = ?", [targetId, myId]);
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ message: "수락 실패" }); }
+});
+
+// 친구 요청 거절/삭제
+app.post("/friends/reject", async (req, res) => {
+  const { targetId } = req.body;
+  const myId = req.headers['x-user-id'];
+  try {
+    await pool.query("DELETE FROM user_relations WHERE (requester_id = ? AND target_id = ?) OR (requester_id = ? AND target_id = ?)", [targetId, myId, myId, targetId]);
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ message: "거절 실패" }); }
+});
+
+// 차단하기
+app.post("/friends/block", async (req, res) => {
+  const { targetId } = req.body;
+  const myId = req.headers['x-user-id'];
+  try {
     await pool.query(
-      "UPDATE users SET nickname = ?, bio = ?, profile_img = ? WHERE email = ?",
-      [nickname, bio, finalImgPath, email]
+      "INSERT INTO user_relations (requester_id, target_id, status) VALUES (?, ?, 'blocked') ON DUPLICATE KEY UPDATE status='blocked'",
+      [myId, targetId]
     );
-    res.json({ success: true, nickname, bio, profile_img: finalImgPath });
-  } catch (err) {
-    console.error("Profile Update Error:", err);
-    res.status(500).json({ message: "프로필 수정 중 오류가 발생했습니다." });
-  }
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ message: "차단 실패" }); }
+});
+
+// 차단 목록 조회
+app.get("/friends/blocked", async (req, res) => {
+  const myId = req.headers['x-user-id'];
+  try {
+    const [rows] = await pool.query(`
+      SELECT u.user_id as id, u.nickname, u.profile_img 
+      FROM users u 
+      JOIN user_relations r ON u.user_id = r.target_id 
+      WHERE r.requester_id = ? AND r.status = 'blocked'
+    `, [myId]);
+    res.json(rows);
+  } catch (err) { res.status(500).json({ message: "차단 목록 조회 실패" }); }
 });
 
 app.listen(4000, () => console.log("🚀 Server on http://localhost:4000"));
