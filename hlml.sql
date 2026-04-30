@@ -44,7 +44,7 @@ CREATE TABLE posts (
     participants INT DEFAULT 1,       
     status       VARCHAR(20) DEFAULT '모집중',
     categories   JSON,
-    image        LONGTEXT,
+    image        VARCHAR(500),
     author       VARCHAR(100),
     created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     edited       BOOLEAN DEFAULT FALSE
@@ -82,4 +82,14 @@ CREATE TABLE chat_messages (
     created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (post_id) REFERENCES posts(post_id) ON DELETE CASCADE,
     FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
+);
+
+-- 7. 참여자
+CREATE TABLE post_participants (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    post_id INT NOT NULL,
+    user_id INT NOT NULL,
+    FOREIGN KEY (post_id) REFERENCES posts(post_id) ON DELETE CASCADE,
+    FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE,
+    UNIQUE KEY uq_participant (post_id, user_id)
 );
