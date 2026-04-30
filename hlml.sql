@@ -45,7 +45,7 @@ CREATE TABLE posts (
     time TIME,
     place VARCHAR(255),
     map VARCHAR(500),
-    capacity INT DEFAULT 2,
+    capacity INT DEFAULT 5,
     participants INT DEFAULT 1,
     status VARCHAR(20) DEFAULT '모집중',
     categories JSON,
@@ -90,4 +90,12 @@ CREATE TABLE chat_messages (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (post_id) REFERENCES posts(post_id) ON DELETE CASCADE,
     FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
+);
+
+-- 7. 채팅방 입장 기록 테이블
+CREATE TABLE room_entries (
+    entry_id INT AUTO_INCREMENT PRIMARY KEY,
+    username VARCHAR(50) NOT NULL,
+    channel VARCHAR(100) NOT NULL,
+    entry_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );

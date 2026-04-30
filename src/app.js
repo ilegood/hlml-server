@@ -123,11 +123,46 @@ app.post("/api/rooms", async (req, res) => {
 app.get("/api/rooms", async (req, res) => {
   try {
     const [rows] = await pool.query(
-      "SELECT post_id AS id, title, status FROM posts",
+      "SELECT post_id AS id, title, status, author FROM posts",
     );
     res.json(rows);
   } catch (e) {
     res.json([]);
+  }
+});
+
+app.delete("/api/rooms/:roomId", async (req, res) => {
+  const { roomId } = req.params;
+  const { author } = req.body;
+
+  if (!author) {
+    return res.status(400).json({ success: false, message: "삭제 요청자가 필요합니다." });
+  }
+
+  try {
+    const [rows] = await pool.query(
+      "SELECT author FROM posts WHERE post_id = ?",
+      [roomId],
+    );
+
+    if (rows.length === 0) {
+      return res.status(404).json({ success: false, message: "존재하지 않는 방입니다." });
+    }
+
+    if (rows[0].author !== author) {
+      return res.status(403).json({ success: false, message: "방장만 삭제할 수 있습니다." });
+    }
+
+    io.to(String(roomId)).emit("room_deleted", { roomId: Number(roomId) });
+    io.socketsLeave(String(roomId));
+
+    await pool.query("DELETE FROM room_entries WHERE channel = ?", [String(roomId)]);
+    await pool.query("DELETE FROM posts WHERE post_id = ?", [roomId]);
+
+    res.json({ success: true });
+  } catch (e) {
+    console.error("Failed to delete room:", e);
+    res.status(500).json({ success: false, message: "채팅방 삭제에 실패했습니다." });
   }
 });
 
