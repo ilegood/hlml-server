@@ -165,4 +165,21 @@ router.patch("/profile", auth, upload.single("profile_img"), async (req, res) =>
   }
 });
 
+// 유저 검색: /users/search?q=...
+router.get("/search", auth, async (req, res) => {
+  const query = req.query.q;
+  if (!query) return res.json([]);
+
+  try {
+    const [rows] = await pool.query(
+      "SELECT user_id, nickname, profile_img FROM users WHERE nickname LIKE ? AND user_id != ? LIMIT 10",
+      [`%${query}%`, req.userId]
+    );
+    res.json(rows);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Internal server error" });
+  }
+});
+
 export default router;

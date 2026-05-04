@@ -87,7 +87,7 @@ export const createComment = (req) => {
 };
 
 export const updateComment = (req) => {
-  return repo.updateComment(req.params.id, req.body.content);
+  return repo.updateComment(req.params.id, req.userId, req.body.content);
 };
 
-export const deleteComment = (id) => repo.deleteComment(id);
+export const deleteComment = (id, userId) => repo.deleteComment(id, userId);

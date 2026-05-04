@@ -9,6 +9,7 @@ const mapPostRow = (post, likes = [], participants = [], comments = []) => {
   comments.forEach((row) => {
     const item = {
       id: row.id,
+      userId: row.user_id,
       text: row.content,
       author: row.nickname || "익명",
       createdAt: row.created_at,
@@ -211,11 +212,16 @@ export const createComment = (data) =>
     [data.postId, data.userId, data.content, data.parent_id || null],
   );
 
-export const updateComment = (id, content) =>
-  pool.query("UPDATE comments SET content=?, edited=1 WHERE id=?", [
+export const updateComment = (id, userId, content) =>
+  pool.query("UPDATE comments SET content=?, edited=1 WHERE id=? AND user_id=?", [
     content,
     id,
+    userId,
   ]);
 
-export const deleteComment = (id) =>
-  pool.query("DELETE FROM comments WHERE id=? OR parent_id=?", [id, id]);
+export const deleteComment = (id, userId) =>
+  pool.query("DELETE FROM comments WHERE (id=? OR parent_id=?) AND user_id=?", [
+    id,
+    id,
+    userId,
+  ]);

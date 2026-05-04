@@ -101,7 +101,7 @@ export const updateComment = async (req, res) => {
 
 export const deleteComment = async (req, res) => {
   try {
-    await postService.deleteComment(req.params.id);
+    await postService.deleteComment(req.params.id, req.userId);
     res.json({ success: true });
   } catch (e) {
     console.error(e);
