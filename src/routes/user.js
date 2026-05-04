@@ -182,4 +182,68 @@ router.get("/search", auth, async (req, res) => {
   }
 });
 
+// 회원 탈퇴: /users (DELETE)
+router.delete("/", auth, async (req, res) => {
+  const connection = await pool.getConnection();
+  await connection.beginTransaction();
+
+  try {
+    const userId = req.userId;
+
+    // 1. 유저 정보(닉네임) 가져오기
+    const [users] = await connection.query("SELECT nickname FROM users WHERE user_id = ?", [userId]);
+    if (users.length === 0) {
+      await connection.rollback();
+      return res.status(404).json({ message: "사용자를 찾을 수 없습니다." });
+    }
+    const userNickname = users[0].nickname;
+
+    // 2. 유저가 참여 중인 게시글 목록 가져오기 (본인 게시글 제외)
+    const [joinedPosts] = await connection.query(
+      "SELECT post_id FROM post_participants WHERE user_id = ?",
+      [userId]
+    );
+
+    // 3. 본인이 작성한 게시글 삭제
+    await connection.query("DELETE FROM posts WHERE author = ?", [userNickname]);
+
+    // 4. 유저 삭제 (post_participants 등은 ON DELETE CASCADE로 자동 삭제됨)
+    const [result] = await connection.query("DELETE FROM users WHERE user_id = ?", [userId]);
+    
+    // 5. 유저가 참여했던 게시글들의 인원수 및 상태 업데이트
+    for (const post of joinedPosts) {
+      const postId = post.post_id;
+      
+      // 해당 게시글이 아직 존재하는지 확인 (본인 작성 게시글이면 이미 삭제됨)
+      const [postExists] = await connection.query("SELECT capacity FROM posts WHERE post_id = ?", [postId]);
+      if (postExists.length > 0) {
+        const capacity = postExists[0].capacity;
+        
+        // 현재 남은 참여자 수 계산 (작성자 1명 + 참여자 테이블 수)
+        const [participantCount] = await connection.query(
+          "SELECT COUNT(*) AS count FROM post_participants WHERE post_id = ?",
+          [postId]
+        );
+        const currentParticipants = 1 + participantCount[0].count;
+        
+        // 상태 업데이트 (인원이 여유 있으면 '모집중'으로 변경)
+        const nextStatus = currentParticipants >= capacity ? "모집완료" : "모집중";
+        await connection.query(
+          "UPDATE posts SET participants = ?, status = ? WHERE post_id = ?",
+          [currentParticipants, nextStatus, postId]
+        );
+      }
+    }
+
+    await connection.commit();
+    res.json({ message: "회원 탈퇴가 완료되었습니다." });
+  } catch (error) {
+    await connection.rollback();
+    console.error(error);
+    res.status(500).json({ message: "Internal server error" });
+  } finally {
+    connection.release();
+  }
+});
+
 export default router;

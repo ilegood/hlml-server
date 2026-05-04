@@ -41,7 +41,7 @@ CREATE TABLE posts (
     place        VARCHAR(255),
     map          VARCHAR(500),
     capacity     INT DEFAULT 2,
-    participants INT DEFAULT 1,       
+    participants INT DEFAULT 1,
     status       VARCHAR(20) DEFAULT '모집중',
     categories   JSON,
     image        VARCHAR(500),
@@ -52,11 +52,11 @@ CREATE TABLE posts (
 
 -- 4. 게시글 찜 목록
 CREATE TABLE post_likes (
-    id         INT AUTO_INCREMENT PRIMARY KEY,
-    user_id    INT NOT NULL,
-    post_id    INT NOT NULL,
-    FOREIGN KEY (user_id)  REFERENCES users(user_id) ON DELETE CASCADE,
-    FOREIGN KEY (post_id)  REFERENCES posts(post_id) ON DELETE CASCADE,
+    id      INT AUTO_INCREMENT PRIMARY KEY,
+    user_id INT NOT NULL,
+    post_id INT NOT NULL,
+    FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE,
+    FOREIGN KEY (post_id) REFERENCES posts(post_id) ON DELETE CASCADE,
     UNIQUE KEY uq_post_like (user_id, post_id)
 );
 
@@ -64,32 +64,56 @@ CREATE TABLE post_likes (
 CREATE TABLE comments (
     id         INT AUTO_INCREMENT PRIMARY KEY,
     post_id    INT NOT NULL,
-    user_id    INT NOT NULL,                  
+    user_id    INT NOT NULL,
     content    TEXT NOT NULL,
-    parent_id  INT DEFAULT NULL,                  
+    parent_id  INT DEFAULT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     edited     BOOLEAN DEFAULT FALSE,
-    FOREIGN KEY (post_id)  REFERENCES posts(post_id) ON DELETE CASCADE, 
-    FOREIGN KEY (user_id)  REFERENCES users(user_id) ON DELETE CASCADE
-);
-
--- 6. 실시간 채팅 메시지 테이블 (모임 안에서의 채팅)
-CREATE TABLE chat_messages (
-    message_id   INT AUTO_INCREMENT PRIMARY KEY,
-    post_id      INT NOT NULL,
-    user_id      INT NOT NULL,
-    message      TEXT NOT NULL,
-    created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (post_id) REFERENCES posts(post_id) ON DELETE CASCADE,
     FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
 );
 
--- 7. 참여자
+-- 6. 게시글 참여자
 CREATE TABLE post_participants (
-    id INT AUTO_INCREMENT PRIMARY KEY,
+    id      INT AUTO_INCREMENT PRIMARY KEY,
     post_id INT NOT NULL,
     user_id INT NOT NULL,
     FOREIGN KEY (post_id) REFERENCES posts(post_id) ON DELETE CASCADE,
     FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE,
     UNIQUE KEY uq_participant (post_id, user_id)
 );
+
+-- 7. 채팅 메시지
+CREATE TABLE messages (
+    id         INT AUTO_INCREMENT PRIMARY KEY,
+    room_id    VARCHAR(100) NOT NULL,
+    user_id    VARCHAR(100) NOT NULL,
+    nickname   VARCHAR(100) NOT NULL,
+    content    TEXT NOT NULL,
+    is_system  BOOLEAN DEFAULT FALSE,
+    is_edited  BOOLEAN DEFAULT FALSE,
+    is_deleted BOOLEAN DEFAULT FALSE,
+    parent_id  INT DEFAULT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 8. 채팅 메시지 리액션
+CREATE TABLE message_reactions (
+    id         INT AUTO_INCREMENT PRIMARY KEY,
+    message_id INT NOT NULL,
+    user_id    VARCHAR(100) NOT NULL,
+    emoji      VARCHAR(10) NOT NULL,
+    UNIQUE KEY uq_reaction (message_id, user_id, emoji),
+    FOREIGN KEY (message_id) REFERENCES messages(id) ON DELETE CASCADE
+);
+
+-- 9. 채팅 메시지 읽음
+CREATE TABLE message_reads (
+    id         INT AUTO_INCREMENT PRIMARY KEY,
+    message_id INT NOT NULL,
+    user_id    VARCHAR(100) NOT NULL,
+    UNIQUE KEY uq_read (message_id, user_id),
+    FOREIGN KEY (message_id) REFERENCES messages(id) ON DELETE CASCADE
+);
+
+DROP TABLE message_reads_status;
