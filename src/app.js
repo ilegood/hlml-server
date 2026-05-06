@@ -95,16 +95,19 @@ io.on("connection", (socket) => {
       }
 
       const [rows] = await pool.query(
-        `SELECT m.*, u.nickname as latestNickname, u.profile_img as latestProfileImg,
-          JSON_ARRAYAGG(
-            IF(r.id IS NOT NULL, JSON_OBJECT('emoji', r.emoji, 'userId', r.user_id), NULL)
-          ) as reactions
-         FROM messages m
-         LEFT JOIN users u ON m.user_id = u.user_id
-         LEFT JOIN message_reactions r ON m.id = r.message_id
-         WHERE m.room_id = ?
-         GROUP BY m.id
-         ORDER BY m.created_at ASC LIMIT 50`,
+        `SELECT 
+    m.*, 
+    ANY_VALUE(u.nickname) as latestNickname, 
+    ANY_VALUE(u.profile_img) as latestProfileImg,
+    JSON_ARRAYAGG(
+      IF(r.id IS NOT NULL, JSON_OBJECT('emoji', r.emoji, 'userId', r.user_id), NULL)
+    ) as reactions
+   FROM messages m
+   LEFT JOIN users u ON m.user_id = u.user_id
+   LEFT JOIN message_reactions r ON m.id = r.message_id
+   WHERE m.room_id = ?
+   GROUP BY m.id
+   ORDER BY m.created_at ASC LIMIT 50`,
         [roomId],
       );
       const formatted = rows.map((row) => {
