@@ -43,9 +43,17 @@ export const updatePost = async (req, res) => {
 };
 
 export const deletePost = async (req, res) => {
-  await postService.deletePost(req.params.id);
-  res.json({ success: true });
+  try {
+    await postService.deletePost(req.params.id);
+    res.json({ success: true });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ message: "delete error" });
+  }
 };
+
+// like
+// ... (rest of methods unchanged, I will provide the whole block below)
 
 // like
 export const likePost = async (req, res) => {
@@ -74,8 +82,13 @@ export const joinPost = async (req, res) => {
 
 // comments
 export const getComments = async (req, res) => {
-  const data = await postService.getComments(req.params.id);
-  res.json(data);
+  try {
+    const data = await postService.getComments(req.params.id);
+    res.json(data);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ message: "get comments error" });
+  }
 };
 
 export const createComment = async (req, res) => {
