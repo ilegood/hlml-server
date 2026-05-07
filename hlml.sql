@@ -22,12 +22,21 @@ CREATE TABLE users (
 
 -- 2. 친구 및 관계 테이블
 CREATE TABLE user_relations (
-    id           INT AUTO_INCREMENT PRIMARY KEY,
+    id INT AUTO_INCREMENT PRIMARY KEY,
     requester_id INT NOT NULL,
-    target_id    INT NOT NULL,
-    status       ENUM('pending', 'accepted', 'blocked') NOT NULL DEFAULT 'pending',
-    FOREIGN KEY (requester_id) REFERENCES users(user_id) ON DELETE CASCADE,
-    FOREIGN KEY (target_id)    REFERENCES users(user_id) ON DELETE CASCADE,
+    target_id INT NOT NULL,
+    status ENUM('pending', 'accepted', 'blocked') NOT NULL DEFAULT 'pending',
+    requester_memo TEXT,
+    target_memo TEXT,
+    
+    FOREIGN KEY (requester_id)
+        REFERENCES users(user_id)
+        ON DELETE CASCADE,
+
+    FOREIGN KEY (target_id)
+        REFERENCES users(user_id)
+        ON DELETE CASCADE,
+
     UNIQUE KEY uq_relation (requester_id, target_id)
 );
 
@@ -114,6 +123,17 @@ CREATE TABLE message_reads (
     user_id    VARCHAR(100) NOT NULL,
     UNIQUE KEY uq_read (message_id, user_id),
     FOREIGN KEY (message_id) REFERENCES messages(id) ON DELETE CASCADE
+);
+
+-- 채팅 약송 장속 지도
+CREATE TABLE World_map (
+    map_id      INT AUTO_INCREMENT PRIMARY KEY,
+    post_id     INT NOT NULL, -- 어떤 게시물의 약속 장소인지
+    place_name  VARCHAR(255) NOT NULL, -- 장소명 (예: 강남역 스타벅스)
+    address     VARCHAR(255) NOT NULL, -- 전체 주소 (도로명/지번)
+    latitude    DECIMAL(10, 8) NOT NULL, -- 위도 (예: 37.12345678)
+    longitude   DECIMAL(11, 8) NOT NULL, -- 경도 (예: 127.12345678)
+    FOREIGN KEY (post_id) REFERENCES posts(post_id) ON DELETE CASCADE
 );
 
 DROP TABLE message_reads_status;
