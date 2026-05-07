@@ -16,7 +16,7 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
-    origin: "http://localhost:5173",
+    origin: ["http://localhost:5173", "http://127.0.0.1:5173"],
     methods: ["GET", "POST"],
   },
 });
@@ -37,13 +37,14 @@ io.on("connection", (socket) => {
   console.log("유저 접속:", socket.id);
 
   socket.on("join_room", async ({ roomId, nickname, userId }) => {
-    socket.join(roomId);
+    const roomStr = String(roomId);
+    socket.join(roomStr);
 
     try {
       // 채팅방 정보(게시글 제목, 이미지) 가져오기
       const [roomRows] = await pool.query(
         "SELECT title, image FROM posts WHERE post_id = ?",
-        [roomId],
+        [roomStr],
       );
       if (roomRows.length > 0) {
         socket.emit("room_info", {
@@ -146,44 +147,54 @@ io.on("connection", (socket) => {
       parentId,
       profileImg,
     } = data;
+    const roomStr = String(roomId);
 
     try {
       const [result] = await pool.query(
         "INSERT INTO messages (room_id, user_id, nickname, content, is_system, parent_id) VALUES (?, ?, ?, ?, ?, ?)",
-        [roomId, userId, nickname, content, isSystem ? 1 : 0, parentId || null],
+        [roomStr, userId, nickname, content, isSystem ? 1 : 0, parentId || null],
       );
       const messageId = result.insertId;
-      io.to(roomId).emit("receive_message", { ...data, id: messageId });
+      const responseMsg = { 
+        ...data, 
+        id: messageId, 
+        roomId: roomStr,
+        created_at: new Date().toISOString() 
+      };
+      io.to(roomStr).emit("receive_message", responseMsg);
     } catch (err) {
       console.error("메시지 저장 실패:", err);
     }
   });
 
   socket.on("edit_message", async ({ messageId, content, roomId }) => {
+    const roomStr = String(roomId);
     try {
       await pool.query(
         "UPDATE messages SET content = ?, is_edited = 1 WHERE id = ?",
         [content, messageId],
       );
-      io.to(roomId).emit("message_edited", { messageId, content });
+      io.to(roomStr).emit("message_edited", { messageId, content });
     } catch (err) {
       console.error("메시지 수정 실패:", err);
     }
   });
 
   socket.on("delete_message", async ({ messageId, roomId }) => {
+    const roomStr = String(roomId);
     try {
       await pool.query(
         "UPDATE messages SET is_deleted = 1, content = '삭제된 메시지입니다.' WHERE id = ?",
         [messageId],
       );
-      io.to(roomId).emit("message_deleted", { messageId });
+      io.to(roomStr).emit("message_deleted", { messageId });
     } catch (err) {
       console.error("메시지 삭제 실패:", err);
     }
   });
 
   socket.on("react_message", async ({ messageId, userId, emoji, roomId }) => {
+    const roomStr = String(roomId);
     try {
       const [[existing]] = await pool.query(
         "SELECT id FROM message_reactions WHERE message_id = ? AND user_id = ? AND emoji = ?",
@@ -205,13 +216,14 @@ io.on("connection", (socket) => {
         "SELECT emoji, user_id as userId FROM message_reactions WHERE message_id = ?",
         [messageId],
       );
-      io.to(roomId).emit("update_reactions", { messageId, reactions });
+      io.to(roomStr).emit("update_reactions", { messageId, reactions });
     } catch (err) {
       console.error("리액션 실패:", err);
     }
   });
 
   socket.on("mark_read", async ({ messageId, userId, roomId }) => {
+    const roomStr = String(roomId);
     try {
       const [[{ readCount }]] = await pool.query(
         "SELECT COUNT(*) as readCount FROM message_reads WHERE message_id = ? AND user_id = ?",
@@ -227,7 +239,7 @@ io.on("connection", (socket) => {
           "SELECT COUNT(*) as total FROM message_reads WHERE message_id = ?",
           [messageId],
         );
-        io.to(roomId).emit("update_read_count", {
+        io.to(roomStr).emit("update_read_count", {
           messageId,
           readCount: total,
         });
