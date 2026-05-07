@@ -9,6 +9,7 @@ import pool from "./db.js";
 
 import postRoutes from "./routes/post.js";
 import userRoutes from "./routes/user.js";
+import friendsRoutes from "./routes/friends.js";
 
 dotenv.config();
 
@@ -30,6 +31,7 @@ app.use(express.json());
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
 // routes
+app.use("/friends", friendsRoutes);
 app.use("/posts", postRoutes);
 app.use("/users", userRoutes);
 
