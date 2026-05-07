@@ -26,6 +26,8 @@ CREATE TABLE user_relations (
     requester_id INT NOT NULL,
     target_id    INT NOT NULL,
     status       ENUM('pending', 'accepted', 'blocked') NOT NULL DEFAULT 'pending',
+    requester_memo TEXT,
+    target_memo    TEXT,
     FOREIGN KEY (requester_id) REFERENCES users(user_id) ON DELETE CASCADE,
     FOREIGN KEY (target_id)    REFERENCES users(user_id) ON DELETE CASCADE,
     UNIQUE KEY uq_relation (requester_id, target_id)

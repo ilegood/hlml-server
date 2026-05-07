@@ -158,6 +158,11 @@ saveMemoBtn.addEventListener("click", () => {
   const newMemo = memoInput.value.trim();
   currentFriend.memo = newMemo; // 배열 내 선택된 친구 데이터 업데이트
 
+  // localStorage에 저장
+  const savedMemos = JSON.parse(localStorage.getItem("static_memos") || "{}");
+  savedMemos[currentFriend.id] = newMemo;
+  localStorage.setItem("static_memos", JSON.stringify(savedMemos));
+
   memoInputArea.classList.add("hidden");
   memoBtn.classList.remove("hidden");
 
@@ -206,4 +211,9 @@ function renderFriends() {
 }
 
 // 스크립트가 로드되면 친구 목록 그리기 최초 1회 실행
+const savedStaticMemos = JSON.parse(localStorage.getItem("static_memos") || "{}");
+MOCK_FRIENDS.forEach(f => {
+  if (savedStaticMemos[f.id]) f.memo = savedStaticMemos[f.id];
+});
+
 renderFriends();

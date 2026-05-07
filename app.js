@@ -202,13 +202,47 @@ app.get("/friends", async (req, res) => {
   if (isNaN(myId)) return res.json([]);
   try {
     const [rows] = await pool.query(`
-      SELECT u.user_id as id, u.nickname as name, u.profile_img, u.bio as statusMessage, 'online' as status
+      SELECT 
+        u.user_id as id, 
+        u.nickname as name, 
+        u.profile_img, 
+        u.bio as statusMessage, 
+        'online' as status,
+        CASE 
+          WHEN r.requester_id = ? THEN r.requester_memo 
+          ELSE r.target_memo 
+        END as memo
       FROM user_relations r
       JOIN users u ON (u.user_id = r.target_id AND r.requester_id = ?) OR (u.user_id = r.requester_id AND r.target_id = ?)
       WHERE r.status = 'accepted' AND u.is_deleted = FALSE
-    `, [myId, myId]);
+    `, [myId, myId, myId]);
     res.json(rows);
   } catch (err) { res.status(500).json({ message: "조회 실패" }); }
+});
+
+// 친구 메모 저장
+app.post("/friends/memo", async (req, res) => {
+  const { targetId, memo } = req.body;
+  const myId = parseInt(req.headers['x-user-id']);
+  if (isNaN(myId)) return res.status(401).json({ message: "로그인이 필요합니다." });
+
+  try {
+    const [relations] = await pool.query(
+      "SELECT * FROM user_relations WHERE (requester_id = ? AND target_id = ?) OR (requester_id = ? AND target_id = ?)",
+      [myId, targetId, targetId, myId]
+    );
+
+    if (relations.length === 0) return res.status(404).json({ message: "관계를 찾을 수 없습니다." });
+
+    const relation = relations[0];
+    if (relation.requester_id == myId) {
+      await pool.query("UPDATE user_relations SET requester_memo = ? WHERE id = ?", [memo, relation.id]);
+    } else {
+      await pool.query("UPDATE user_relations SET target_memo = ? WHERE id = ?", [memo, relation.id]);
+    }
+
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ message: "메모 저장 실패" }); }
 });
 
 // 받은 친구 요청 목록
