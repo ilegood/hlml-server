@@ -202,7 +202,7 @@ io.on("connection", (socket) => {
       }
 
       const [reactions] = await pool.query(
-        "SELECT emoji, user_id FROM message_reactions WHERE message_id = ?",
+        "SELECT emoji, user_id as userId FROM message_reactions WHERE message_id = ?",
         [messageId],
       );
       io.to(roomId).emit("update_reactions", { messageId, reactions });

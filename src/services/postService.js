@@ -14,7 +14,7 @@ const normalizeCategories = (categories) => {
 
 const normalizeImagePath = (image) => {
   if (!image) return "";
-  return image.startsWith(BASE_URL) ? image.slice(BASE_URL.length) : image;
+  return image;
 };
 
 const normalizeDate = (date) => {
@@ -46,7 +46,7 @@ export const getPost = (id) => repo.getPostWithDetails(id);
 export const createPost = async (req) => {
   const { body, file } = req;
 
-  const image = file ? `/uploads/${file.filename}` : null;
+  const image = file ? file.path : null;
 
   return repo.createPost({
     ...normalizePostData(body),
@@ -58,7 +58,7 @@ export const updatePost = async (req) => {
   const { body, file, params } = req;
 
   const image = file
-    ? `/uploads/${file.filename}`
+    ? file.path
     : body.existingImage !== undefined
       ? normalizeImagePath(body.existingImage)
       : null;

@@ -3,22 +3,9 @@ import pool from "../db.js";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 import auth from "../middleware/auth.js";
-import multer from "multer";
-import path from "path";
+import { upload } from "../middleware/cloudinary.js";
 
 const router = express.Router();
-
-// 이미지 업로드 설정
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, "src/uploads/");
-  },
-  filename: (req, file, cb) => {
-    const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
-    cb(null, uniqueSuffix + path.extname(file.originalname));
-  },
-});
-const upload = multer({ storage: storage });
 
 // 회원가입: /users/register
 router.post("/register", async (req, res) => {
@@ -107,7 +94,7 @@ router.get("/profile", auth, async (req, res) => {
 router.patch("/profile", auth, upload.single("profile_img"), async (req, res) => {
   const { nickname, bio, currentPassword, newPassword } = req.body;
   const userId = req.userId;
-  let profileImgPath = req.file ? `/uploads/${req.file.filename}` : null;
+  let profileImgPath = req.file ? req.file.path : null;
 
   try {
     // 1. 기존 정보 가져오기

@@ -1,20 +1,10 @@
 import express from "express";
-import multer from "multer";
-import path from "path";
+import { upload } from "../middleware/cloudinary.js";
 
 import * as postController from "../controllers/postController.js";
 import auth from "../middleware/auth.js";
 
 const router = express.Router();
-
-// multer
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, "src/uploads/"),
-  filename: (req, file, cb) =>
-    cb(null, Date.now() + path.extname(file.originalname)),
-});
-
-const upload = multer({ storage });
 
 // routes
 router.get("/", postController.getPosts);
