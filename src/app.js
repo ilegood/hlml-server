@@ -70,7 +70,7 @@ io.on("connection", (socket) => {
           );
           const messageId = result.insertId;
 
-          io.to(roomId).emit("receive_message", {
+          io.to(roomStr).emit("receive_message", {
             id: messageId,
             roomId,
             userId,
@@ -147,19 +147,26 @@ io.on("connection", (socket) => {
       parentId,
       profileImg,
     } = data;
-    const roomStr = String(roomId);
+    const roomStr = String(data.roomId);
 
     try {
       const [result] = await pool.query(
         "INSERT INTO messages (room_id, user_id, nickname, content, is_system, parent_id) VALUES (?, ?, ?, ?, ?, ?)",
-        [roomStr, userId, nickname, content, isSystem ? 1 : 0, parentId || null],
+        [
+          roomStr,
+          userId,
+          nickname,
+          content,
+          isSystem ? 1 : 0,
+          parentId || null,
+        ],
       );
       const messageId = result.insertId;
-      const responseMsg = { 
-        ...data, 
-        id: messageId, 
+      const responseMsg = {
+        ...data,
+        id: messageId,
         roomId: roomStr,
-        created_at: new Date().toISOString() 
+        created_at: new Date().toISOString(),
       };
       io.to(roomStr).emit("receive_message", responseMsg);
     } catch (err) {
