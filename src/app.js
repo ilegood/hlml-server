@@ -42,15 +42,16 @@ io.on("connection", (socket) => {
     socket.join(roomId);
 
     try {
-      // 채팅방 정보(게시글 제목, 이미지) 가져오기
+      // 채팅방 정보(게시글 제목, 이미지, 작성자) 가져오기
       const [roomRows] = await pool.query(
-        "SELECT title, image FROM posts WHERE post_id = ?",
+        "SELECT title, image, author FROM posts WHERE post_id = ?",
         [roomId],
       );
       if (roomRows.length > 0) {
         socket.emit("room_info", {
           title: roomRows[0].title,
           image: roomRows[0].image,
+          author: roomRows[0].author,
         });
       }
 
