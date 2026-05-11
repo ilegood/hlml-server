@@ -75,6 +75,8 @@ export const likePost = (userId, postId) => repo.toggleLikePost(userId, postId);
 
 export const joinPost = (userId, postId) => repo.toggleJoinPost(userId, postId);
 
+export const leavePost = (userId, postId) => repo.leavePost(userId, postId);
+
 export const getComments = (postId) => repo.getComments(postId);
 
 export const createComment = (req) => {

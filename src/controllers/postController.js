@@ -72,6 +72,17 @@ export const joinPost = async (req, res) => {
   }
 };
 
+export const leavePost = async (req, res) => {
+  try {
+    const data = await postService.leavePost(req.userId, req.params.id);
+    if (!data) return res.status(404).json({ message: "not found" });
+    res.json(data);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ message: "leave error" });
+  }
+};
+
 export const getComments = async (req, res) => {
   try {
     const data = await postService.getComments(req.params.id);

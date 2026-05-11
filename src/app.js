@@ -42,29 +42,45 @@ io.on("connection", (socket) => {
     socket.join(roomId);
 
     try {
-      // 채팅방 정보(게시글 제목, 이미지) 가져오기
+      // 채팅방 정보(게시글 제목, 이미지, 작성자) 가져오기
       const [roomRows] = await pool.query(
-        "SELECT title, image FROM posts WHERE post_id = ?",
+        "SELECT title, image, author FROM posts WHERE post_id = ?",
         [roomId],
       );
       if (roomRows.length > 0) {
         socket.emit("room_info", {
           title: roomRows[0].title,
           image: roomRows[0].image,
+          author: roomRows[0].author,
         });
       }
 
       // 시스템 메시지: 유저 입장 알림 (DB 저장 및 전송)
       if (nickname && userId) {
-        const joinMsgContent = `${nickname}님이 입장하셨습니다.`;
-        // 해당 유저의 시스템 메시지(입장 알림)가 이미 있는지 확인
-        const [existing] = await pool.query(
-          "SELECT id, content FROM messages WHERE room_id = ? AND user_id = ? AND is_system = 1",
+        // 이전에 입장하거나 퇴장한 기록이 있는지 확인
+        const [history] = await pool.query(
+          "SELECT id, content FROM messages WHERE room_id = ? AND user_id = ? AND is_system = 1 ORDER BY id DESC LIMIT 1",
           [roomId, userId],
         );
 
-        if (existing.length === 0) {
-          // 최초 입장 시에만 저장
+        let joinMsgContent = `${nickname}님이 입장하셨습니다.`;
+        let shouldInsert = false;
+
+        if (history.length === 0) {
+          // 아예 처음 들어오는 경우
+          shouldInsert = true;
+        } else {
+          // 기록이 있는데, 마지막 기록이 '퇴장'이었거나 이미 '입장' 기록이 있는 경우 (재입장 판단)
+          // 여기서는 단순하게 "기록이 있으면 재입장"으로 처리하거나, 
+          // 더 정확하게 "마지막이 퇴장"이었을 때만 새 메시지를 넣을 수 있습니다.
+          // 사용자의 요청은 "다시 입장 했을 때" 이므로, 퇴장 기록 이후 들어오는 상황을 타겟팅합니다.
+          if (history[0].content.includes("퇴장하셨습니다")) {
+            joinMsgContent = `${nickname}님이 다시 입장하셨습니다.`;
+            shouldInsert = true;
+          }
+        }
+
+        if (shouldInsert) {
           const [result] = await pool.query(
             "INSERT INTO messages (room_id, user_id, nickname, content, is_system) VALUES (?, ?, ?, ?, ?)",
             [roomId, userId, "System", joinMsgContent, 1],
@@ -80,19 +96,6 @@ io.on("connection", (socket) => {
             isSystem: true,
             created_at: new Date().toISOString(),
           });
-        } else {
-          // 이미 입장 메시지가 있는데 닉네임이 바뀐 경우 업데이트
-          if (existing[0].content !== joinMsgContent) {
-            await pool.query("UPDATE messages SET content = ? WHERE id = ?", [
-              joinMsgContent,
-              existing[0].id,
-            ]);
-            // 모든 클라이언트에 업데이트 알림 (이미 불러온 메시지 목록 갱신용)
-            io.to(roomId).emit("message_edited", {
-              messageId: existing[0].id,
-              content: joinMsgContent,
-            });
-          }
         }
       }
 
@@ -136,6 +139,19 @@ io.on("connection", (socket) => {
     } catch (err) {
       console.error("메시지 불러오기 실패:", err);
     }
+  });
+
+  socket.on("leave_room", ({ roomId, nickname, userId }) => {
+    const leaveMsgContent = `${nickname}님이 퇴장하셨습니다.`;
+    io.to(roomId).emit("receive_message", {
+      roomId,
+      userId,
+      nickname: "System",
+      content: leaveMsgContent,
+      isSystem: true,
+      time: new Date().toISOString(),
+    });
+    socket.leave(roomId);
   });
 
   socket.on("send_message", async (data) => {
