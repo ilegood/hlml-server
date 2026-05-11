@@ -17,6 +17,7 @@ router.delete("/:id", auth, postController.deletePost);
 // like / join
 router.post("/:id/like", auth, postController.likePost);
 router.post("/:id/join", auth, postController.joinPost);
+router.post("/:id/leave", auth, postController.leavePost);
 
 // comments
 router.get("/:id/comments", postController.getComments);
