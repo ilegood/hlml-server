@@ -9,6 +9,7 @@ import pool from "./db.js";
 
 import postRoutes from "./routes/post.js";
 import userRoutes from "./routes/user.js";
+import friendsRoutes from "./routes/friends.js";
 
 dotenv.config();
 
@@ -30,6 +31,7 @@ app.use(express.json());
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
 // routes
+app.use("/friends", friendsRoutes);
 app.use("/posts", postRoutes);
 app.use("/users", userRoutes);
 
@@ -202,7 +204,7 @@ io.on("connection", (socket) => {
       }
 
       const [reactions] = await pool.query(
-        "SELECT emoji, user_id FROM message_reactions WHERE message_id = ?",
+        "SELECT emoji, user_id as userId FROM message_reactions WHERE message_id = ?",
         [messageId],
       );
       io.to(roomId).emit("update_reactions", { messageId, reactions });
