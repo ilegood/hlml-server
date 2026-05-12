@@ -213,7 +213,6 @@ router.get("/search", auth, async (req, res) => {
   }
 });
 
-
 // 회원 탈퇴: /users (DELETE)
 router.delete("/", auth, async (req, res) => {
   const connection = await pool.getConnection();
@@ -287,32 +286,6 @@ router.delete("/", auth, async (req, res) => {
     res.status(500).json({ message: "Internal server error" });
   } finally {
     connection.release();
-  }
-});
-
-// 유저 검색
-router.get("/search", async (req, res) => {
-  const { q } = req.query;
-  const myId = parseInt(req.headers["x-user-id"]);
-  try {
-    // 닉네임 검색 시: 본인 제외 + 탈퇴 유저 제외 + 내가 차단한 유저 제외
-    const [rows] = await pool.query(
-      `
-      SELECT user_id as id, nickname, profile_img 
-      FROM users 
-      WHERE nickname LIKE ? 
-      AND is_deleted = FALSE 
-      AND user_id != ?
-      AND user_id NOT IN (
-        SELECT target_id FROM user_relations 
-        WHERE requester_id = ? AND status = 'blocked'
-      )
-    `,
-      [`%${q}%`, myId || 0, myId || 0],
-    );
-    res.json(rows);
-  } catch (err) {
-    res.status(500).json({ message: "검색 실패" });
   }
 });
 
