@@ -141,16 +141,29 @@ io.on("connection", (socket) => {
     }
   });
 
-  socket.on("leave_room", ({ roomId, nickname, userId }) => {
+  socket.on("leave_room", async ({ roomId, nickname, userId }) => {
     const leaveMsgContent = `${nickname}님이 퇴장하셨습니다.`;
-    io.to(roomId).emit("receive_message", {
-      roomId,
-      userId,
-      nickname: "System",
-      content: leaveMsgContent,
-      isSystem: true,
-      time: new Date().toISOString(),
-    });
+    
+    try {
+      // 시스템 메시지 DB 저장
+      const [result] = await pool.query(
+        "INSERT INTO messages (room_id, user_id, nickname, content, is_system) VALUES (?, ?, ?, ?, ?)",
+        [roomId, userId, "System", leaveMsgContent, 1],
+      );
+      
+      io.to(roomId).emit("receive_message", {
+        id: result.insertId,
+        roomId,
+        userId,
+        nickname: "System",
+        content: leaveMsgContent,
+        isSystem: true,
+        created_at: new Date().toISOString(),
+      });
+    } catch (err) {
+      console.error("퇴장 메시지 저장 실패:", err);
+    }
+    
     socket.leave(roomId);
   });
 
