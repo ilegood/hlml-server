@@ -168,6 +168,18 @@ export const toggleJoinPost = async (userId, postId) => {
   if (existing) {
     await pool.query("DELETE FROM post_participants WHERE id=?", [existing.id]);
   } else {
+    // 강퇴 여부 확인 (messages 테이블의 시스템 메시지 활용)
+    const [banRows] = await pool.query(
+      "SELECT id FROM messages WHERE room_id = ? AND user_id = ? AND is_system = 1 AND content LIKE '%강퇴되었습니다.'",
+      [postId, userId],
+    );
+
+    if (banRows.length > 0) {
+      const error = new Error("이 방에서 강퇴당하여 다시 참여할 수 없습니다.");
+      error.status = 403;
+      throw error;
+    }
+
     const [[{ count }]] = await pool.query(
       "SELECT COUNT(*) AS count FROM post_participants WHERE post_id=?",
       [postId],

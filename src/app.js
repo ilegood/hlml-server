@@ -39,6 +39,24 @@ io.on("connection", (socket) => {
   console.log("유저 접속:", socket.id);
 
   socket.on("join_room", async ({ roomId, nickname, userId }) => {
+    try {
+      // 강퇴 내역 확인 (messages 테이블의 시스템 메시지 활용)
+      const [banRows] = await pool.query(
+        "SELECT id FROM messages WHERE room_id = ? AND user_id = ? AND is_system = 1 AND content LIKE '%강퇴되었습니다.'",
+        [roomId, userId],
+      );
+
+      if (banRows.length > 0) {
+        socket.emit(
+          "error_message",
+          "이 방에서 강퇴당하여 다시 입장할 수 없습니다.",
+        );
+        return;
+      }
+    } catch (err) {
+      console.error("강퇴 여부 확인 실패:", err);
+    }
+
     socket.join(roomId);
 
     try {
@@ -71,7 +89,7 @@ io.on("connection", (socket) => {
           shouldInsert = true;
         } else {
           // 기록이 있는데, 마지막 기록이 '퇴장'이었거나 이미 '입장' 기록이 있는 경우 (재입장 판단)
-          // 여기서는 단순하게 "기록이 있으면 재입장"으로 처리하거나, 
+          // 여기서는 단순하게 "기록이 있으면 재입장"으로 처리하거나,
           // 더 정확하게 "마지막이 퇴장"이었을 때만 새 메시지를 넣을 수 있습니다.
           // 사용자의 요청은 "다시 입장 했을 때" 이므로, 퇴장 기록 이후 들어오는 상황을 타겟팅합니다.
           if (history[0].content.includes("퇴장하셨습니다")) {
@@ -143,14 +161,14 @@ io.on("connection", (socket) => {
 
   socket.on("leave_room", async ({ roomId, nickname, userId }) => {
     const leaveMsgContent = `${nickname}님이 퇴장하셨습니다.`;
-    
+
     try {
       // 시스템 메시지 DB 저장
       const [result] = await pool.query(
         "INSERT INTO messages (room_id, user_id, nickname, content, is_system) VALUES (?, ?, ?, ?, ?)",
         [roomId, userId, "System", leaveMsgContent, 1],
       );
-      
+
       io.to(roomId).emit("receive_message", {
         id: result.insertId,
         roomId,
@@ -163,7 +181,7 @@ io.on("connection", (socket) => {
     } catch (err) {
       console.error("퇴장 메시지 저장 실패:", err);
     }
-    
+
     socket.leave(roomId);
   });
 
@@ -267,6 +285,62 @@ io.on("connection", (socket) => {
       console.error("읽음 처리 실패:", err);
     }
   });
+
+  socket.on(
+    "kick_user",
+    async ({ roomId, targetUserId, targetNickname, myUserId }) => {
+      try {
+        // 1. 방장 권한 확인 (게시글 작성자와 요청 유저의 닉네임 비교)
+        const [postRows] = await pool.query(
+          "SELECT author FROM posts WHERE post_id = ?",
+          [roomId],
+        );
+        const [userRows] = await pool.query(
+          "SELECT nickname FROM users WHERE user_id = ?",
+          [myUserId],
+        );
+
+        if (postRows.length === 0 || userRows.length === 0) return;
+
+        const isAuthor = postRows[0].author === userRows[0].nickname;
+        if (!isAuthor) {
+          return socket.emit(
+            "error_message",
+            "방장만 유저를 강퇴할 수 있습니다.",
+          );
+        }
+
+        // 1.5 DB에서 참여자 삭제 및 인원수 업데이트
+        await pool.query(
+          "DELETE FROM post_participants WHERE post_id = ? AND user_id = ?",
+          [roomId, targetUserId],
+        );
+
+        // 2. 시스템 메시지 저장 (강퇴 알림 - 이것이 곧 ban 기록이 됨)
+        const kickMsgContent = `${targetNickname}님이 강퇴되었습니다.`;
+        const [result] = await pool.query(
+          "INSERT INTO messages (room_id, user_id, nickname, content, is_system) VALUES (?, ?, ?, ?, ?)",
+          [roomId, targetUserId, "System", kickMsgContent, 1],
+        );
+
+        const kickData = {
+          id: result.insertId,
+          roomId,
+          userId: targetUserId,
+          nickname: "System",
+          content: kickMsgContent,
+          isSystem: true,
+          created_at: new Date().toISOString(),
+        };
+
+        // 3. 전체 방에 메시지 전송 및 특정 유저 강퇴 이벤트 전송
+        io.to(roomId).emit("receive_message", kickData);
+        io.to(roomId).emit("user_kicked", { targetUserId, roomId });
+      } catch (err) {
+        console.error("강퇴 처리 중 오류:", err);
+      }
+    },
+  );
 
   socket.on("disconnect", () => {
     console.log("유저 퇴장:", socket.id);
