@@ -42,9 +42,9 @@ io.on("connection", (socket) => {
 
   socket.on("join_room", async ({ roomId, nickname, userId }) => {
     try {
-      // 강퇴 내역 확인 (messages 테이블의 시스템 메시지 활용)
+      // 강퇴 내역 확인 (post_bans 테이블 활용)
       const [banRows] = await pool.query(
-        "SELECT id FROM messages WHERE room_id = ? AND user_id = ? AND is_system = 1 AND content LIKE '%강퇴되었습니다.'",
+        "SELECT id FROM post_bans WHERE post_id = ? AND user_id = ?",
         [roomId, userId],
       );
 
@@ -55,11 +55,12 @@ io.on("connection", (socket) => {
         );
         return;
       }
+
+      // 강퇴 여부 확인 통과 후 방 입장
+      socket.join(roomId);
     } catch (err) {
       console.error("강퇴 여부 확인 실패:", err);
     }
-
-    socket.join(roomId);
 
     try {
       // 채팅방 정보 가져오기 (게시글 채팅 또는 DM)
@@ -72,14 +73,14 @@ io.on("connection", (socket) => {
           FROM dm_rooms dr
           JOIN users u ON (dr.user1_id = u.user_id AND dr.user2_id = ?) OR (dr.user2_id = u.user_id AND dr.user1_id = ?)
           WHERE dr.id = ?`,
-          [userId, userId, dmId]
+          [userId, userId, dmId],
         );
         if (roomRows.length > 0) {
           socket.emit("room_info", {
             title: roomRows[0].targetNickname,
             image: roomRows[0].targetProfileImg,
             author: "System",
-            isDM: true
+            isDM: true,
           });
         }
       } else {
@@ -92,7 +93,7 @@ io.on("connection", (socket) => {
             title: roomRows[0].title,
             image: roomRows[0].image,
             author: roomRows[0].author,
-            isDM: false
+            isDM: false,
           });
         }
       }
@@ -340,6 +341,12 @@ io.on("connection", (socket) => {
           [roomId, targetUserId],
         );
 
+        // 1.7 post_bans 테이블에 강퇴 기록 추가 (목록 노출용)
+        await pool.query(
+          "INSERT IGNORE INTO post_bans (post_id, user_id) VALUES (?, ?)",
+          [roomId, targetUserId],
+        );
+
         // 2. 시스템 메시지 저장 (강퇴 알림 - 이것이 곧 ban 기록이 됨)
         const kickMsgContent = `${targetNickname}님이 강퇴되었습니다.`;
         const [result] = await pool.query(
@@ -350,7 +357,8 @@ io.on("connection", (socket) => {
         const kickData = {
           id: result.insertId,
           roomId,
-          userId: targetUserId,
+          userId: targetUserId, // 강퇴된 유저의 ID
+          targetNickname,
           nickname: "System",
           content: kickMsgContent,
           isSystem: true,

@@ -148,3 +148,15 @@ CREATE TABLE dm_rooms (
 );
 
 DROP TABLE message_reads_status;
+
+-- 11. 강퇴 및 차단 내역
+CREATE TABLE post_bans (
+    id         INT AUTO_INCREMENT PRIMARY KEY,
+    post_id    INT NOT NULL,
+    user_id    INT NOT NULL,
+    is_hidden  BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (post_id) REFERENCES posts(post_id) ON DELETE CASCADE,
+    FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE,
+    UNIQUE KEY uq_ban (post_id, user_id)
+);

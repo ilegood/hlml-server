@@ -93,3 +93,7 @@ export const updateComment = (req) => {
 };
 
 export const deleteComment = (id, userId) => repo.deleteComment(id, userId);
+
+export const getKickedPosts = (userId) => repo.getKickedPostsForUser(userId);
+
+export const deletePostBan = (userId, postId) => repo.deletePostBan(userId, postId);

@@ -168,9 +168,9 @@ export const toggleJoinPost = async (userId, postId) => {
   if (existing) {
     await pool.query("DELETE FROM post_participants WHERE id=?", [existing.id]);
   } else {
-    // 강퇴 여부 확인 (messages 테이블의 시스템 메시지 활용)
+    // 강퇴 여부 확인 (post_bans 테이블 활용)
     const [banRows] = await pool.query(
-      "SELECT id FROM messages WHERE room_id = ? AND user_id = ? AND is_system = 1 AND content LIKE '%강퇴되었습니다.'",
+      "SELECT id FROM post_bans WHERE post_id = ? AND user_id = ?",
       [postId, userId],
     );
 
@@ -315,3 +315,22 @@ export const deleteComment = (id, userId) =>
     id,
     userId,
   ]);
+
+// bans
+export const getKickedPostsForUser = async (userId) => {
+  const [rows] = await pool.query(
+    `SELECT p.* 
+     FROM post_bans pb
+     JOIN posts p ON pb.post_id = p.post_id
+     WHERE pb.user_id = ? AND pb.is_hidden = 0`,
+    [userId],
+  );
+  return Promise.all(rows.map((row) => getPostWithDetails(row.post_id)));
+};
+
+export const deletePostBan = async (userId, postId) => {
+  return pool.query(
+    "UPDATE post_bans SET is_hidden = 1 WHERE user_id = ? AND post_id = ?",
+    [userId, postId],
+  );
+};

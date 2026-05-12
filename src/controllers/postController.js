@@ -123,3 +123,23 @@ export const deleteComment = async (req, res) => {
     res.status(500).json({ message: "comment delete error" });
   }
 };
+
+export const getKickedPosts = async (req, res) => {
+  try {
+    const data = await postService.getKickedPosts(req.userId);
+    res.json(data);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ message: "get kicked posts error" });
+  }
+};
+
+export const deletePostBan = async (req, res) => {
+  try {
+    await postService.deletePostBan(req.userId, req.params.id);
+    res.json({ success: true });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ message: "delete post ban error" });
+  }
+};
