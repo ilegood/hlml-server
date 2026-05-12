@@ -127,13 +127,24 @@ CREATE TABLE message_reads (
 
 -- 채팅 약송 장속 지도
 CREATE TABLE World_map (
-    map_id      INT AUTO_INCREMENT PRIMARY KEY,
-    post_id     INT NOT NULL, -- 어떤 게시물의 약속 장소인지
-    place_name  VARCHAR(255) NOT NULL, -- 장소명 (예: 강남역 스타벅스)
-    address     VARCHAR(255) NOT NULL, -- 전체 주소 (도로명/지번)
-    latitude    DECIMAL(10, 8) NOT NULL, -- 위도 (예: 37.12345678)
-    longitude   DECIMAL(11, 8) NOT NULL, -- 경도 (예: 127.12345678)
-    FOREIGN KEY (post_id) REFERENCES posts(post_id) ON DELETE CASCADE
+    map_id      INT AUTO_INCREMENT PRIMARY KEY,
+    post_id     INT NOT NULL, -- 어떤 게시물의 약속 장소인지
+    place_name  VARCHAR(255) NOT NULL, -- 장소명 (예: 강남역 스타벅스)
+    address     VARCHAR(255) NOT NULL, -- 전체 주소 (도로명/지번)
+    latitude    DECIMAL(10, 8) NOT NULL, -- 위도 (예: 37.12345678)
+    longitude   DECIMAL(11, 8) NOT NULL, -- 경도 (예: 127.12345678)
+    FOREIGN KEY (post_id) REFERENCES posts(post_id) ON DELETE CASCADE
+);
+
+-- 10. 개인 메시지 방 테이블
+CREATE TABLE dm_rooms (
+    id          INT AUTO_INCREMENT PRIMARY KEY,
+    user1_id    INT NOT NULL,
+    user2_id    INT NOT NULL,
+    created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_dm (user1_id, user2_id),
+    FOREIGN KEY (user1_id) REFERENCES users(user_id) ON DELETE CASCADE,
+    FOREIGN KEY (user2_id) REFERENCES users(user_id) ON DELETE CASCADE
 );
 
 DROP TABLE message_reads_status;
