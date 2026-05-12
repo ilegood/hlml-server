@@ -10,6 +10,7 @@ import pool from "./db.js";
 import postRoutes from "./routes/post.js";
 import userRoutes from "./routes/user.js";
 import friendsRoutes from "./routes/friends.js";
+import chatRoutes from "./routes/chat.js";
 
 dotenv.config();
 
@@ -34,6 +35,7 @@ app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 app.use("/friends", friendsRoutes);
 app.use("/posts", postRoutes);
 app.use("/users", userRoutes);
+app.use("/chat", chatRoutes);
 
 io.on("connection", (socket) => {
   console.log("유저 접속:", socket.id);
@@ -42,21 +44,43 @@ io.on("connection", (socket) => {
     socket.join(roomId);
 
     try {
-      // 채팅방 정보(게시글 제목, 이미지, 작성자) 가져오기
-      const [roomRows] = await pool.query(
-        "SELECT title, image, author FROM posts WHERE post_id = ?",
-        [roomId],
-      );
-      if (roomRows.length > 0) {
-        socket.emit("room_info", {
-          title: roomRows[0].title,
-          image: roomRows[0].image,
-          author: roomRows[0].author,
-        });
+      // 채팅방 정보 가져오기 (게시글 채팅 또는 DM)
+      if (String(roomId).startsWith("dm_")) {
+        const dmId = roomId.split("_")[1];
+        const [roomRows] = await pool.query(
+          `SELECT 
+            u.nickname as targetNickname, 
+            u.profile_img as targetProfileImg
+          FROM dm_rooms dr
+          JOIN users u ON (dr.user1_id = u.user_id AND dr.user2_id = ?) OR (dr.user2_id = u.user_id AND dr.user1_id = ?)
+          WHERE dr.id = ?`,
+          [userId, userId, dmId]
+        );
+        if (roomRows.length > 0) {
+          socket.emit("room_info", {
+            title: roomRows[0].targetNickname,
+            image: roomRows[0].targetProfileImg,
+            author: "System",
+            isDM: true
+          });
+        }
+      } else {
+        const [roomRows] = await pool.query(
+          "SELECT title, image, author FROM posts WHERE post_id = ?",
+          [roomId],
+        );
+        if (roomRows.length > 0) {
+          socket.emit("room_info", {
+            title: roomRows[0].title,
+            image: roomRows[0].image,
+            author: roomRows[0].author,
+            isDM: false
+          });
+        }
       }
 
-      // 시스템 메시지: 유저 입장 알림 (DB 저장 및 전송)
-      if (nickname && userId) {
+      // 시스템 메시지: 유저 입장 알림 (DM이 아닐 때만)
+      if (!String(roomId).startsWith("dm_") && nickname && userId) {
         // 이전에 입장하거나 퇴장한 기록이 있는지 확인
         const [history] = await pool.query(
           "SELECT id, content FROM messages WHERE room_id = ? AND user_id = ? AND is_system = 1 ORDER BY id DESC LIMIT 1",
