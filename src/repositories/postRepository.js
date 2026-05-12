@@ -1,6 +1,6 @@
 import pool from "../db.js";
 
-const mapPostRow = (post, likes = [], participants = [], comments = []) => {
+const mapPostRow = (post, likes = [], participants = [], comments = [], authorDetails = null) => {
   const joinedBy = participants.map((row) => row.nickname);
   const joinedUserIds = participants.map((row) => row.user_id);
   const topLevel = [];
@@ -29,6 +29,8 @@ const mapPostRow = (post, likes = [], participants = [], comments = []) => {
 
   return {
     ...post,
+    authorDetails,
+    participantDetails: participants,
     likes: likes.length,
     likedBy: likes.map((row) => row.nickname),
     joinedBy,
@@ -51,11 +53,16 @@ export const getPostWithDetails = async (id) => {
   );
 
   const [participants] = await pool.query(
-    `SELECT u.user_id, u.nickname
+    `SELECT u.user_id, u.nickname, u.profile_img
      FROM post_participants pp
      JOIN users u ON pp.user_id = u.user_id
      WHERE pp.post_id = ?`,
     [id],
+  );
+
+  const [[authorDetails]] = await pool.query(
+    `SELECT user_id, nickname, profile_img FROM users WHERE nickname = ?`,
+    [post.author],
   );
 
   const [comments] = await pool.query(
@@ -67,7 +74,7 @@ export const getPostWithDetails = async (id) => {
     [id],
   );
 
-  return mapPostRow(post, likes, participants, comments);
+  return mapPostRow(post, likes, participants, comments, authorDetails);
 };
 
 // posts
