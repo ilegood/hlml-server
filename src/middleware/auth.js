@@ -1,5 +1,5 @@
 import jwt from "jsonwebtoken";
-import "dotenv/config";
+import { env } from "../config/env.js";
 
 const authMiddleware = (req, res, next) => {
   try {
@@ -8,14 +8,25 @@ const authMiddleware = (req, res, next) => {
       return res.status(401).json({ message: "인증 헤더가 없습니다." });
     }
 
-    const token = authHeader.split(" ")[1];
+    const token = authHeader.startsWith("Bearer ")
+      ? authHeader.slice(7).trim()
+      : authHeader.trim();
 
-    const decoded = jwt.verify(token, process.env.SECRET_KEY);
-    req.userId = decoded.userId;
+    if (!token) {
+      return res.status(401).json({ message: "인증 토큰이 없습니다." });
+    }
+
+    const decoded = jwt.verify(token, env.jwtSecret);
+    req.userId = decoded.userId ?? decoded.user_id ?? decoded.sub;
+
+    if (!req.userId) {
+      return res.status(401).json({ message: "유효한 사용자 정보를 찾을 수 없습니다." });
+    }
 
     next();
   } catch (error) {
-    return res.status(401).json({ message: "유효하지 않은 토큰입니다" });
+    console.error("Auth failed:", error.name, error.message);
+    return res.status(401).json({ message: "유효하지 않은 토큰입니다." });
   }
 };
 

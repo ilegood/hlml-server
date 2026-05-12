@@ -1,7 +1,5 @@
 import * as repo from "../repositories/postRepository.js";
 
-const BASE_URL = "http://localhost:4000";
-
 const normalizeCategories = (categories) => {
   if (categories === undefined || categories === null || categories === "") {
     return JSON.stringify({});
@@ -32,11 +30,20 @@ const normalizeCapacity = (capacity) => {
   return Number.isNaN(parsed) ? 2 : parsed;
 };
 
+const normalizeFloatOrNull = (value) => {
+  if (value === undefined || value === null || value === "") return null;
+
+  const parsed = Number.parseFloat(value);
+  return Number.isNaN(parsed) ? null : parsed;
+};
+
 const normalizePostData = (body) => ({
   ...body,
   date: normalizeDate(body.date),
   time: normalizeTime(body.time),
   capacity: normalizeCapacity(body.capacity),
+  latitude: normalizeFloatOrNull(body.latitude),
+  longitude: normalizeFloatOrNull(body.longitude),
   categories: normalizeCategories(body.categories),
 });
 
@@ -45,11 +52,19 @@ export const getPost = (id) => repo.getPostWithDetails(id);
 
 export const createPost = async (req) => {
   const { body, file } = req;
+  const resolvedUserId = req.userId ?? body.user_id;
+
+  if (!resolvedUserId) {
+    const error = new Error("missing user id");
+    error.status = 400;
+    throw error;
+  }
 
   const image = file ? file.path : null;
 
   return repo.createPost({
     ...normalizePostData(body),
+    user_id: resolvedUserId,
     image,
   });
 };
@@ -63,13 +78,13 @@ export const updatePost = async (req) => {
       ? normalizeImagePath(body.existingImage)
       : null;
 
-  return repo.updatePost(params.id, {
+  return repo.updatePost(params.id, req.userId, {
     ...normalizePostData(body),
     image,
   });
 };
 
-export const deletePost = (id) => repo.deletePost(id);
+export const deletePost = (id, userId) => repo.deletePost(id, userId);
 
 export const likePost = (userId, postId) => repo.toggleLikePost(userId, postId);
 

@@ -27,13 +27,14 @@ export const createPost = async (req, res) => {
     res.json(result);
   } catch (e) {
     console.error(e);
-    res.status(500).json({ message: "create error" });
+    res.status(e.status || 500).json({ message: e.message || "create error" });
   }
 };
 
 export const updatePost = async (req, res) => {
   try {
-    await postService.updatePost(req);
+    const affectedRows = await postService.updatePost(req);
+    if (!affectedRows) return res.status(403).json({ message: "forbidden" });
     res.json({ success: true });
   } catch (e) {
     console.error(e);
@@ -43,7 +44,8 @@ export const updatePost = async (req, res) => {
 
 export const deletePost = async (req, res) => {
   try {
-    await postService.deletePost(req.params.id);
+    const affectedRows = await postService.deletePost(req.params.id, req.userId);
+    if (!affectedRows) return res.status(403).json({ message: "forbidden" });
     res.json({ success: true });
   } catch (e) {
     console.error(e);
@@ -89,7 +91,7 @@ export const createComment = async (req, res) => {
     res.json(data);
   } catch (e) {
     console.error(e);
-    res.status(500).json({ message: "comment create error" });
+    res.status(e.status || 500).json({ message: "comment create error" });
   }
 };
 

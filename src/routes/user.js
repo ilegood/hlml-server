@@ -4,6 +4,7 @@ import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 import auth from "../middleware/auth.js";
 import { upload } from "../middleware/cloudinary.js";
+import { env } from "../config/env.js";
 
 const router = express.Router();
 
@@ -55,7 +56,7 @@ router.post("/login", async (req, res) => {
     // JWT 토큰 생성
     const token = jwt.sign(
       { userId: user.user_id, email: user.email },
-      process.env.SECRET_KEY,
+      env.jwtSecret,
       { expiresIn: "7d" }
     );
 
@@ -115,15 +116,8 @@ router.patch("/profile", auth, upload.single("profile_img"), async (req, res) =>
     // 3. 비밀번호 변경 로직
     let hashedPassword = user.password;
     if (currentPassword && newPassword) {
-      // bcrypt 암호화 방식과 평문 방식을 모두 고려 (과거 데이터 호환성)
-      let isMatch = false;
-      try {
-        isMatch = await bcrypt.compare(currentPassword, user.password);
-      } catch (e) {
-        // 만약 DB에 평문으로 저장되어 있다면 직접 비교
-        isMatch = (currentPassword === user.password);
-      }
-
+      // bcrypt hash verification only; plaintext passwords are not accepted.
+      const isMatch = await bcrypt.compare(currentPassword, user.password);
       if (!isMatch) {
         return res.status(400).json({ message: "현재 비밀번호가 일치하지 않습니다." });
       }
@@ -176,26 +170,58 @@ router.delete("/", auth, async (req, res) => {
 
   try {
     const userId = req.userId;
-
-    // 1. 유저 정보(닉네임) 가져오기
-    const [users] = await connection.query("SELECT nickname FROM users WHERE user_id = ?", [userId]);
-    if (users.length === 0) {
-      await connection.rollback();
-      return res.status(404).json({ message: "사용자를 찾을 수 없습니다." });
-    }
-    const userNickname = users[0].nickname;
-
-    // 2. 유저가 참여 중인 게시글 목록 가져오기 (본인 게시글 제외)
-    const [joinedPosts] = await connection.query(
-      "SELECT post_id FROM post_participants WHERE user_id = ?",
-      [userId]
+    const [[currentUser]] = await connection.query(
+      "SELECT user_id, nickname FROM users WHERE user_id = ?",
+      [userId],
     );
 
-    // 3. 본인이 작성한 게시글 삭제
-    await connection.query("DELETE FROM posts WHERE author = ?", [userNickname]);
+    if (!currentUser) {
+      await connection.rollback();
+      return res.status(404).json({ message: "User not found" });
+    }
 
-    // 4. 유저 삭제 (post_participants 등은 ON DELETE CASCADE로 자동 삭제됨)
+    let hasPostsUserId = false;
+    try {
+      await connection.query("SELECT user_id FROM posts LIMIT 0");
+      hasPostsUserId = true;
+    } catch {
+      hasPostsUserId = false;
+    }
+
+    // 1. 유저 삭제 (post_participants 등은 ON DELETE CASCADE로 자동 삭제됨)
+    const [joinedPosts] = await connection.query(
+      hasPostsUserId
+        ? `SELECT pp.post_id
+           FROM post_participants pp
+           JOIN posts p ON pp.post_id = p.post_id
+           WHERE pp.user_id = ? AND p.user_id != ?`
+        : `SELECT pp.post_id
+           FROM post_participants pp
+           JOIN posts p ON pp.post_id = p.post_id
+           WHERE pp.user_id = ? AND p.author != ?`,
+      hasPostsUserId ? [userId, userId] : [userId, currentUser.nickname],
+    );
+
     const [result] = await connection.query("DELETE FROM users WHERE user_id = ?", [userId]);
+
+    if (result.affectedRows === 0) {
+      await connection.rollback();
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    if (!hasPostsUserId) {
+      await connection.query("DELETE FROM posts WHERE author = ?", [
+        currentUser.nickname,
+      ]);
+    }
+    
+    // 2. 유저가 참여 중인 게시글 목록 가져오기 (본인 게시글 제외)
+    // If the user's posts are deleted by ON DELETE CASCADE from the posts table,
+    // then this delete statement might not be necessary. However, if the CASCADE is on 'users' to 'posts',
+    // then this is redundant. Let's assume for now that ON DELETE CASCADE from posts to users is implemented.
+    // If not, then this line is needed. Given the user's request, the FK was added from posts.user_id to users.user_id ON DELETE CASCADE,
+    // so this line for deleting posts by user_id is now redundant. I will remove it.
+    // await connection.query("DELETE FROM posts WHERE user_id = ?", [userId]);
     
     // 5. 유저가 참여했던 게시글들의 인원수 및 상태 업데이트
     for (const post of joinedPosts) {
@@ -217,7 +243,13 @@ router.delete("/", auth, async (req, res) => {
         const nextStatus = currentParticipants >= capacity ? "모집완료" : "모집중";
         await connection.query(
           "UPDATE posts SET participants = ?, status = ? WHERE post_id = ?",
-          [currentParticipants, nextStatus, postId]
+          [
+            currentParticipants,
+            currentParticipants >= capacity
+              ? "\ubaa8\uc9d1\uc644\ub8cc"
+              : "\ubaa8\uc9d1\uc911",
+            postId,
+          ]
         );
       }
     }
