@@ -5,7 +5,9 @@ const parseJsonArray = (value) => {
   if (Array.isArray(value)) return value.filter(Boolean);
 
   try {
-    const parsed = JSON.parse(Buffer.isBuffer(value) ? value.toString() : value);
+    const parsed = JSON.parse(
+      Buffer.isBuffer(value) ? value.toString() : value,
+    );
     return Array.isArray(parsed) ? parsed.filter(Boolean) : [];
   } catch {
     return [];
@@ -76,6 +78,8 @@ const mapPostRow = (post, likes = [], participants = [], comments = []) => {
 
   return {
     ...post,
+    authorDetails,
+    participantDetails: participants,
     likes: likes.length,
     likedBy: likes.map((row) => row.user_id),
     joinedBy,
@@ -99,11 +103,16 @@ export const getPostWithDetails = async (id) => {
   );
 
   const [participants] = await pool.query(
-    `SELECT u.user_id, u.nickname
+    `SELECT u.user_id, u.nickname, u.profile_img
      FROM post_participants pp
      JOIN users u ON pp.user_id = u.user_id
      WHERE pp.post_id = ?`,
     [id],
+  );
+
+  const [[authorDetails]] = await pool.query(
+    `SELECT user_id, nickname, profile_img FROM users WHERE nickname = ?`,
+    [post.author],
   );
 
   const [comments] = await pool.query(
@@ -115,7 +124,7 @@ export const getPostWithDetails = async (id) => {
     [id],
   );
 
-  return mapPostRow(post, likes, participants, comments);
+  return mapPostRow(post, likes, participants, comments, authorDetails);
 };
 
 export const getPosts = async () => {
@@ -123,9 +132,7 @@ export const getPosts = async () => {
   const authorJoin = hasUserId
     ? "JOIN users u ON p.user_id = u.user_id"
     : "JOIN users u ON p.author = u.nickname";
-  const postSelect = hasUserId
-    ? "p.*"
-    : "p.*, u.user_id AS user_id";
+  const postSelect = hasUserId ? "p.*" : "p.*, u.user_id AS user_id";
 
   const [rows] = await pool.query(
     `SELECT
@@ -200,9 +207,7 @@ export const getPost = async (id) => {
   const authorJoin = hasUserId
     ? "JOIN users u ON p.user_id = u.user_id"
     : "JOIN users u ON p.author = u.nickname";
-  const postSelect = hasUserId
-    ? "p.*"
-    : "p.*, u.user_id AS user_id";
+  const postSelect = hasUserId ? "p.*" : "p.*, u.user_id AS user_id";
 
   const [[row]] = await pool.query(
     `SELECT ${postSelect}, u.nickname as authorNickname
@@ -356,10 +361,10 @@ export const toggleLikePost = async (userId, postId) => {
   if (existing) {
     await pool.query("DELETE FROM post_likes WHERE id=?", [existing.id]);
   } else {
-    await pool.query("INSERT INTO post_likes (user_id, post_id) VALUES (?, ?)", [
-      userId,
-      postId,
-    ]);
+    await pool.query(
+      "INSERT INTO post_likes (user_id, post_id) VALUES (?, ?)",
+      [userId, postId],
+    );
   }
 
   return getPostWithDetails(postId);
@@ -382,6 +387,18 @@ export const toggleJoinPost = async (userId, postId) => {
   if (existing) {
     await pool.query("DELETE FROM post_participants WHERE id=?", [existing.id]);
   } else {
+    // 강퇴 여부 확인 (post_bans 테이블 활용)
+    const [banRows] = await pool.query(
+      "SELECT id FROM post_bans WHERE post_id = ? AND user_id = ?",
+      [postId, userId],
+    );
+
+    if (banRows.length > 0) {
+      const error = new Error("이 방에서 강퇴당하여 다시 참여할 수 없습니다.");
+      error.status = 403;
+      throw error;
+    }
+
     const [[{ count }]] = await pool.query(
       "SELECT COUNT(*) AS count FROM post_participants WHERE post_id=?",
       [postId],
@@ -417,6 +434,79 @@ export const toggleJoinPost = async (userId, postId) => {
   return getPostWithDetails(postId);
 };
 
+export const leavePost = async (userId, postId) => {
+  const post = await getPost(postId);
+  if (!post) return null;
+
+  // 유저 정보 가져오기 (닉네임 확인용)
+  const [[user]] = await pool.query(
+    "SELECT nickname FROM users WHERE user_id = ?",
+    [userId],
+  );
+  if (!user) return null;
+
+  const isAuthor = post.author === user.nickname;
+
+  if (isAuthor) {
+    // 방장이 나가는 경우: 다음 참여자에게 방장 위임
+    const [[nextParticipant]] = await pool.query(
+      `SELECT pp.user_id, u.nickname 
+       FROM post_participants pp
+       JOIN users u ON pp.user_id = u.user_id
+       WHERE pp.post_id = ? 
+       ORDER BY pp.id ASC LIMIT 1`,
+      [postId],
+    );
+
+    if (nextParticipant) {
+      // 다음 사람에게 방장 넘기기
+      await pool.query("UPDATE posts SET author = ? WHERE post_id = ?", [
+        nextParticipant.nickname,
+        postId,
+      ]);
+      // 참여자 목록에서 해당 유저 제거 (방장이 되었으므로)
+      await pool.query(
+        "DELETE FROM post_participants WHERE post_id = ? AND user_id = ?",
+        [postId, nextParticipant.user_id],
+      );
+    } else {
+      // 혼자 있었으면 그냥 방장 유지 (또는 방 삭제 로직을 넣을 수도 있음)
+      // 여기서는 요구사항에 따라 인원 감소만 처리
+    }
+  } else {
+    // 일반 참여자가 나가는 경우: 참여자 목록에서 삭제
+    await pool.query(
+      "DELETE FROM post_participants WHERE post_id = ? AND user_id = ?",
+      [postId, userId],
+    );
+  }
+
+  // 참여 인원 및 상태 업데이트
+  const [[{ count }]] = await pool.query(
+    "SELECT COUNT(*) AS count FROM post_participants WHERE post_id=?",
+    [postId],
+  );
+
+  const nextParticipants = 1 + count; // 방장 1명 + 나머지 참여자
+  const nextStatus =
+    nextParticipants >= (post.capacity || 2) ? "모집완료" : "모집중";
+
+  await pool.query(
+    "UPDATE posts SET participants=?, status=? WHERE post_id=?",
+    [nextParticipants, nextStatus, postId],
+  );
+
+  // 시스템 메시지: 유저 퇴장 알림 저장
+  const leaveMsgContent = `${user.nickname}님이 퇴장하셨습니다.`;
+  await pool.query(
+    "INSERT INTO messages (room_id, user_id, nickname, content, is_system) VALUES (?, ?, ?, ?, ?)",
+    [postId, userId, "System", leaveMsgContent, 1],
+  );
+
+  return getPostWithDetails(postId);
+};
+
+// comments
 export const getComments = async (postId) => {
   const [rows] = await pool.query(
     `SELECT c.*, u.nickname
@@ -451,11 +541,33 @@ export const createComment = async (data) => {
 };
 
 export const updateComment = (id, userId, content) =>
-  pool.query("UPDATE comments SET content=?, edited=1 WHERE id=? AND user_id=?", [
-    content,
+  pool.query(
+    "UPDATE comments SET content=?, edited=1 WHERE id=? AND user_id=?",
+    [content, id, userId],
+  );
+
+export const deleteComment = (id, userId) =>
+  pool.query("DELETE FROM comments WHERE (id=? OR parent_id=?) AND user_id=?", [
+    id,
     id,
     userId,
   ]);
 
-export const deleteComment = (id, userId) =>
-  pool.query("DELETE FROM comments WHERE id=? AND user_id=?", [id, userId]);
+// bans
+export const getKickedPostsForUser = async (userId) => {
+  const [rows] = await pool.query(
+    `SELECT p.* 
+     FROM post_bans pb
+     JOIN posts p ON pb.post_id = p.post_id
+     WHERE pb.user_id = ? AND pb.is_hidden = 0`,
+    [userId],
+  );
+  return Promise.all(rows.map((row) => getPostWithDetails(row.post_id)));
+};
+
+export const deletePostBan = async (userId, postId) => {
+  return pool.query(
+    "UPDATE post_bans SET is_hidden = 1 WHERE user_id = ? AND post_id = ?",
+    [userId, postId],
+  );
+};

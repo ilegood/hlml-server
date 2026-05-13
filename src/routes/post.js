@@ -8,6 +8,7 @@ const router = express.Router();
 
 // routes
 router.get("/", postController.getPosts);
+router.get("/kicked", auth, postController.getKickedPosts);
 router.get("/:id", postController.getPost);
 
 router.post("/", auth, upload.single("image"), postController.createPost);
@@ -17,6 +18,10 @@ router.delete("/:id", auth, postController.deletePost);
 // like / join
 router.post("/:id/like", auth, postController.likePost);
 router.post("/:id/join", auth, postController.joinPost);
+router.post("/:id/leave", auth, postController.leavePost);
+
+// banned/kicked posts
+router.delete("/:id/ban", auth, postController.deletePostBan);
 
 // comments
 router.get("/:id/comments", postController.getComments);

@@ -90,6 +90,8 @@ export const likePost = (userId, postId) => repo.toggleLikePost(userId, postId);
 
 export const joinPost = (userId, postId) => repo.toggleJoinPost(userId, postId);
 
+export const leavePost = (userId, postId) => repo.leavePost(userId, postId);
+
 export const getComments = (postId) => repo.getComments(postId);
 
 export const createComment = (req) => {
@@ -106,3 +108,7 @@ export const updateComment = (req) => {
 };
 
 export const deleteComment = (id, userId) => repo.deleteComment(id, userId);
+
+export const getKickedPosts = (userId) => repo.getKickedPostsForUser(userId);
+
+export const deletePostBan = (userId, postId) => repo.deletePostBan(userId, postId);
