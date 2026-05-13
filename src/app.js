@@ -1,30 +1,39 @@
+import cors from "cors";
 import express from "express";
+import http from "http";
 import path from "path";
-import { fileURLToPath } from 'url';
-import usersRouter from "./routes/users.js";
+import { fileURLToPath } from "url";
+import { Server } from "socket.io";
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+import { env } from "./config/env.js";
+import postRoutes from "./routes/post.js";
+import userRoutes from "./routes/user.js";
+import { registerChatSocket } from "./socket/chat.socket.js";
 
 const app = express();
-
-app.use((req, res, next) => {
-  res.header("Access-Control-Allow-Origin", "http://localhost:5173");
-  res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, PATCH, OPTIONS");
-  res.header("Access-Control-Allow-Headers", "Content-Type, Authorization");
-  res.header("Access-Control-Allow-Credentials", "true");
-
-  if (req.method === 'OPTIONS') {
-    return res.status(204).end();
-  }
-  next();
+const server = http.createServer(app);
+const io = new Server(server, {
+  cors: {
+    origin: env.clientOrigins,
+    methods: ["GET", "POST"],
+  },
 });
 
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+app.use(
+  cors({
+    origin: env.clientOrigins,
+  }),
+);
 app.use(express.json());
-app.use("/uploads", express.static(path.join(__dirname, "../uploads")));
+app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
-app.use("/users", usersRouter);
+app.use("/posts", postRoutes);
+app.use("/users", userRoutes);
 
-app.listen(4000, () => {
-  console.log("4000번 포트에서 서버 열림");
+registerChatSocket(io);
+
+server.listen(env.port, () => {
+  console.log(`Server running on ${env.port}`);
 });
