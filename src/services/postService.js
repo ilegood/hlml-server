@@ -47,8 +47,8 @@ const normalizePostData = (body) => ({
   categories: normalizeCategories(body.categories),
 });
 
-export const getPosts = () => repo.getPosts();
-export const getPost = (id) => repo.getPostWithDetails(id);
+export const getPosts = (viewerId) => repo.getPosts(viewerId);
+export const getPost = (id, viewerId) => repo.getPostWithDetails(id, viewerId);
 
 export const createPost = async (req) => {
   const { body, file } = req;
@@ -92,7 +92,8 @@ export const joinPost = (userId, postId) => repo.toggleJoinPost(userId, postId);
 
 export const leavePost = (userId, postId) => repo.leavePost(userId, postId);
 
-export const getComments = (postId) => repo.getComments(postId);
+export const getComments = (postId, viewerId) =>
+  repo.getComments(postId, viewerId);
 
 export const createComment = (req) => {
   return repo.createComment({

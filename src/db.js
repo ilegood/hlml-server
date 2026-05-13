@@ -9,7 +9,6 @@ const pool = mysql.createPool({
   database: env.db.database,
   dateStrings: true,
   ssl: env.db.ssl,
-  ssl: { rejectUnauthorized: false },
 });
 
 export default pool;

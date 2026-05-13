@@ -177,6 +177,8 @@ export const rejectFriend = async (req, res) => {
 export const blockFriend = async (req, res) => {
   const { targetId } = req.body;
   const myId = req.userId;
+  const u1 = Math.min(myId, targetId);
+  const u2 = Math.max(myId, targetId);
 
   try {
     const [existing] = await pool.query(
@@ -195,6 +197,31 @@ export const blockFriend = async (req, res) => {
         [myId, targetId],
       );
     }
+
+    const [[dmRoom]] = await pool.query(
+      "SELECT id FROM dm_rooms WHERE user1_id = ? AND user2_id = ?",
+      [u1, u2],
+    );
+
+    if (dmRoom) {
+      await pool.query(
+        `DELETE mr FROM message_reactions mr
+         JOIN messages m ON mr.message_id = m.id
+         WHERE m.room_id = ?`,
+        [`dm_${dmRoom.id}`],
+      );
+      await pool.query(
+        `DELETE mrd FROM message_reads mrd
+         JOIN messages m ON mrd.message_id = m.id
+         WHERE m.room_id = ?`,
+        [`dm_${dmRoom.id}`],
+      );
+      await pool.query("DELETE FROM messages WHERE room_id = ?", [
+        `dm_${dmRoom.id}`,
+      ]);
+      await pool.query("DELETE FROM dm_rooms WHERE id = ?", [dmRoom.id]);
+    }
+
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ message: "차단 실패" });

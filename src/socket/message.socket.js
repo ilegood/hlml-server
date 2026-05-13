@@ -4,21 +4,49 @@ import { toInt } from "./utils.js";
 export const registerMessageSocket = (io, socket) => {
   socket.on("send_message", async (data, ack) => {
     const { roomId, userId, nickname, content, isSystem, parentId } = data;
-    const roomIdInt = toInt(roomId);
+    const roomStr = String(roomId || "");
     const userIdInt = toInt(userId);
     const parentIdInt = parentId ? toInt(parentId) : null;
-    if (!roomIdInt || !userIdInt || !content?.trim()) {
+    if (!roomStr || !userIdInt || !content?.trim()) {
       if (typeof ack === "function") ack({ ok: false });
       return;
     }
 
-    const roomStr = String(roomIdInt);
-
     try {
+      if (roomStr.startsWith("dm_")) {
+        const dmRoomId = Number(roomStr.slice(3));
+        const [[dmRoom]] = await pool.query(
+          "SELECT user1_id, user2_id FROM dm_rooms WHERE id = ? AND (user1_id = ? OR user2_id = ?)",
+          [dmRoomId, userIdInt, userIdInt],
+        );
+
+        if (!dmRoom) {
+          if (typeof ack === "function") ack({ ok: false });
+          return;
+        }
+
+        const otherUserId =
+          Number(dmRoom.user1_id) === userIdInt
+            ? dmRoom.user2_id
+            : dmRoom.user1_id;
+        const [[blocked]] = await pool.query(
+          `SELECT id FROM user_relations
+           WHERE status = 'blocked'
+             AND ((requester_id = ? AND target_id = ?) OR (requester_id = ? AND target_id = ?))
+           LIMIT 1`,
+          [userIdInt, otherUserId, otherUserId, userIdInt],
+        );
+
+        if (blocked) {
+          if (typeof ack === "function") ack({ ok: false });
+          return;
+        }
+      }
+
       const [result] = await pool.query(
         "INSERT INTO messages (room_id, user_id, nickname, content, is_system, parent_id) VALUES (?, ?, ?, ?, ?, ?)",
         [
-          roomIdInt,
+          roomStr,
           userIdInt,
           nickname,
           content,

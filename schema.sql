@@ -85,7 +85,7 @@ CREATE TABLE post_participants (
 
 CREATE TABLE messages (
     id         INT AUTO_INCREMENT PRIMARY KEY,
-    room_id    INT NOT NULL,
+    room_id    VARCHAR(50) NOT NULL,
     user_id    INT NOT NULL,
     nickname   VARCHAR(100) NOT NULL,
     content    TEXT NOT NULL,
@@ -94,7 +94,6 @@ CREATE TABLE messages (
     is_deleted BOOLEAN DEFAULT FALSE,
     parent_id  INT DEFAULT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (room_id) REFERENCES posts(post_id) ON DELETE CASCADE,
     FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE,
     FOREIGN KEY (parent_id) REFERENCES messages(id) ON DELETE SET NULL,
     INDEX idx_messages_room_id (room_id),
@@ -123,18 +122,18 @@ CREATE TABLE message_reads (
     INDEX idx_message_reads_user_id (user_id)
 );
 
--- 채팅 약송 장속 지도
+-- Chat appointment map locations
 CREATE TABLE World_map (
     map_id      INT AUTO_INCREMENT PRIMARY KEY,
-    post_id     INT NOT NULL, -- 어떤 게시물의 약속 장소인지
-    place_name  VARCHAR(255) NOT NULL, -- 장소명 (예: 강남역 스타벅스)
-    address     VARCHAR(255) NOT NULL, -- 전체 주소 (도로명/지번)
-    latitude    DECIMAL(10, 8) NOT NULL, -- 위도 (예: 37.12345678)
-    longitude   DECIMAL(11, 8) NOT NULL, -- 경도 (예: 127.12345678)
+    post_id     INT NOT NULL,
+    place_name  VARCHAR(255) NOT NULL,
+    address     VARCHAR(255) NOT NULL,
+    latitude    DECIMAL(10, 8) NOT NULL,
+    longitude   DECIMAL(11, 8) NOT NULL,
     FOREIGN KEY (post_id) REFERENCES posts(post_id) ON DELETE CASCADE
 );
 
--- 10. 개인 메시지 방 테이블
+-- 10. Direct message rooms
 CREATE TABLE dm_rooms (
     id          INT AUTO_INCREMENT PRIMARY KEY,
     user1_id    INT NOT NULL,
@@ -145,9 +144,9 @@ CREATE TABLE dm_rooms (
     FOREIGN KEY (user2_id) REFERENCES users(user_id) ON DELETE CASCADE
 );
 
-DROP TABLE message_reads_status;
+DROP TABLE IF EXISTS message_reads_status;
 
--- 11. 강퇴 및 차단 내역
+-- 11. Post kick/ban history
 CREATE TABLE post_bans (
     id         INT AUTO_INCREMENT PRIMARY KEY,
     post_id    INT NOT NULL,
@@ -158,3 +157,4 @@ CREATE TABLE post_bans (
     FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE,
     UNIQUE KEY uq_ban (post_id, user_id)
 );
+
