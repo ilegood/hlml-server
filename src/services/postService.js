@@ -45,6 +45,7 @@ const normalizePostData = (body) => ({
   latitude: normalizeFloatOrNull(body.latitude),
   longitude: normalizeFloatOrNull(body.longitude),
   categories: normalizeCategories(body.categories),
+  status: body.status || "\ubaa8\uc9d1\uc911",
 });
 
 export const getPosts = (viewerId) => repo.getPosts(viewerId);

@@ -173,8 +173,7 @@ export const deleteUserController = async (req, res) => {
       return res.status(404).json({ message: "User not found" });
     }
 
-    const hasPostsUserId = await getPostsUserIdExistence(connection);
-    const joinedPosts = await getJoinedPostsForUser(userId, currentUser.nickname, hasPostsUserId, connection);
+    const joinedPosts = await getJoinedPostsForUser(userId, connection);
 
     const affectedRows = await deleteUserById(userId, connection);
 
@@ -183,9 +182,8 @@ export const deleteUserController = async (req, res) => {
       return res.status(404).json({ message: "User not found" });
     }
 
-    if (!hasPostsUserId) {
-      await deletePostsByAuthor(currentUser.nickname, connection);
-    }
+    // Authored posts are deleted by CASCADE in DB, but if not, we handle it here.
+    // Given schema.sql has ON DELETE CASCADE, this might be redundant but safe.
 
     for (const post of joinedPosts) {
       const postId = post.post_id;
@@ -199,7 +197,12 @@ export const deleteUserController = async (req, res) => {
           ? "\ubaa8\uc9d1\uc644\ub8cc"
           : "\ubaa8\uc9d1\uc911";
 
-      await updatePostParticipantsAndStatus(postId, currentParticipants, status, connection);
+      await updatePostParticipantsAndStatus(
+        postId,
+        currentParticipants,
+        status,
+        connection,
+      );
     }
 
     await connection.commit();
