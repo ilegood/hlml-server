@@ -1,6 +1,6 @@
 import express from "express";
 import multer from "multer";
-import { query } from "../db.js";
+import pool, { query } from "../db.js";
 import auth from "../middleware/auth.js";
 import { cloudinary } from "../middleware/cloudinary.js";
 
@@ -232,6 +232,52 @@ router.get("/dm/:roomId", auth, async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: "DM 정보 조회 실패" });
+  }
+});
+
+router.delete("/dm/:roomId", auth, async (req, res) => {
+  const myId = req.userId;
+  const { roomId } = req.params;
+  const roomIdInt = Number(roomId);
+
+  if (!roomIdInt) {
+    return res.status(400).json({ message: "invalid room id" });
+  }
+
+  const connection = await pool.getConnection();
+
+  try {
+    await connection.beginTransaction();
+
+    const [[room]] = await connection.query(
+      "SELECT id FROM dm_rooms WHERE id = ? AND (user1_id = ? OR user2_id = ?)",
+      [roomIdInt, myId, myId],
+    );
+
+    if (!room) {
+      await connection.rollback();
+      return res.status(404).json({ message: "room not found" });
+    }
+
+    const roomKey = `dm_${roomIdInt}`;
+    await connection.query("DELETE FROM messages WHERE room_id = ?", [roomKey]);
+    await connection.query("DELETE FROM dm_rooms WHERE id = ?", [roomIdInt]);
+
+    await connection.commit();
+
+    const io = req.app.get("io");
+    io?.to(roomKey)?.emit("dm_room_deleted", {
+      roomId: roomIdInt,
+      deletedBy: myId,
+    });
+
+    res.json({ success: true });
+  } catch (err) {
+    await connection.rollback();
+    console.error("DM delete failed:", err);
+    res.status(500).json({ message: "dm delete failed" });
+  } finally {
+    connection.release();
   }
 });
 

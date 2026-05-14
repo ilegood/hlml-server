@@ -35,6 +35,7 @@ app.use("/users", userRoutes);
 app.use("/chat", chatRoutes);
 
 registerChatSocket(io);
+app.set("io", io);
 
 server.listen(env.port, () => {
   console.log(`Server running on ${env.port}`);
