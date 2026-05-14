@@ -53,16 +53,8 @@ export const searchUsers = async (query, myId) => {
      WHERE nickname LIKE ?
      AND is_deleted = FALSE
      AND user_id != ?
-     AND user_id NOT IN (
-       SELECT target_id FROM user_relations
-       WHERE requester_id = ? AND status = 'blocked'
-     )
-     AND user_id NOT IN (
-       SELECT requester_id FROM user_relations
-       WHERE target_id = ? AND status = 'blocked'
-     )
      LIMIT 10`,
-    [`%${query}%`, myId, myId, myId]
+    [`%${query}%`, myId]
   );
   return rows;
 };
