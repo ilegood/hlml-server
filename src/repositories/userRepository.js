@@ -1,7 +1,10 @@
 import pool from "../db.js";
 
 export const findUserByEmail = async (email) => {
-  const [rows] = await pool.query("SELECT user_id, email, password FROM users WHERE email = ?", [email]);
+  const [rows] = await pool.query(
+    "SELECT user_id, nickname, email, password, bio, profile_img FROM users WHERE email = ?",
+    [email],
+  );
   return rows[0];
 };
 
@@ -89,24 +92,19 @@ export const getPostsUserIdExistence = async (connection) => {
   }
 };
 
-export const getJoinedPostsForUser = async (userId, nickname, hasPostsUserId, connection) => {
+export const getJoinedPostsForUser = async (userId, connection) => {
   const [joinedPosts] = await connection.query(
-    hasPostsUserId
-      ? `SELECT pp.post_id
-         FROM post_participants pp
-         JOIN posts p ON pp.post_id = p.post_id
-         WHERE pp.user_id = ? AND p.user_id != ?`
-      : `SELECT pp.post_id
-         FROM post_participants pp
-         JOIN posts p ON pp.post_id = p.post_id
-         WHERE pp.user_id = ? AND p.author != ?`,
-    hasPostsUserId ? [userId, userId] : [userId, nickname]
+    `SELECT pp.post_id
+     FROM post_participants pp
+     JOIN posts p ON pp.post_id = p.post_id
+     WHERE pp.user_id = ? AND p.user_id != ?`,
+    [userId, userId],
   );
   return joinedPosts;
 };
 
-export const deletePostsByAuthor = async (nickname, connection) => {
-  await connection.query("DELETE FROM posts WHERE author = ?", [nickname]);
+export const deletePostsByAuthor = async (userId, connection) => {
+  await connection.query("DELETE FROM posts WHERE user_id = ?", [userId]);
 };
 
 export const getPostCapacity = async (postId, connection) => {

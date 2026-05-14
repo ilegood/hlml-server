@@ -37,6 +37,12 @@ const normalizeFloatOrNull = (value) => {
   return Number.isNaN(parsed) ? null : parsed;
 };
 
+const normalizeStatus = (status) => {
+  return String(status || "").trim() === "\ubaa8\uc9d1\uc644\ub8cc"
+    ? "\ubaa8\uc9d1\uc644\ub8cc"
+    : "\ubaa8\uc9d1\uc911";
+};
+
 const normalizePostData = (body) => ({
   ...body,
   date: normalizeDate(body.date),
@@ -45,6 +51,7 @@ const normalizePostData = (body) => ({
   latitude: normalizeFloatOrNull(body.latitude),
   longitude: normalizeFloatOrNull(body.longitude),
   categories: normalizeCategories(body.categories),
+  status: normalizeStatus(body.status),
 });
 
 export const getPosts = (viewerId) => repo.getPosts(viewerId);
