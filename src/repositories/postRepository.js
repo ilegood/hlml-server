@@ -1,5 +1,8 @@
 import pool from "../db.js";
 
+const STATUS_OPEN = "\ubaa8\uc9d1\uc911";
+const STATUS_CLOSED = "\ubaa8\uc9d1\uc644\ub8cc";
+
 const parseJsonArray = (value) => {
   if (!value) return [];
   if (Array.isArray(value)) return value.filter(Boolean);
@@ -37,6 +40,36 @@ const getBlockedUserIds = async (viewerId) => {
     [viewerId],
   );
   return new Set(rows.map((row) => Number(row.target_id)));
+};
+
+const getParticipantCount = async (postId) => {
+  const [[{ count }]] = await pool.query(
+    "SELECT COUNT(*) AS count FROM post_participants WHERE post_id=?",
+    [postId],
+  );
+  return Number(count) || 0;
+};
+
+const syncPostParticipantState = async (
+  postId,
+  capacity,
+  currentStatus = null,
+  wasFull = false,
+) => {
+  const count = await getParticipantCount(postId);
+  const participants = 1 + count;
+  const status =
+    (currentStatus === STATUS_CLOSED && !wasFull) ||
+    participants >= (capacity || 2)
+      ? STATUS_CLOSED
+      : STATUS_OPEN;
+
+  await pool.query(
+    "UPDATE posts SET participants=?, status=? WHERE post_id=?",
+    [participants, status, postId],
+  );
+
+  return { participants, status };
 };
 
 const mapPostRow = (
@@ -122,8 +155,8 @@ export const getPostWithDetails = async (id, viewerId = null) => {
   );
 
   const [[authorDetails]] = await pool.query(
-    `SELECT user_id, nickname, profile_img FROM users WHERE nickname = ?`,
-    [post.author],
+    `SELECT user_id, nickname, profile_img FROM users WHERE user_id = ?`,
+    [post.user_id],
   );
 
   const [comments] = await pool.query(
@@ -264,6 +297,15 @@ export const createPost = async (data) => {
 };
 
 export const updatePost = async (id, userId, data) => {
+  const currentParticipants = await getParticipantCount(id) + 1;
+  const nextCapacity = Number.parseInt(data.capacity, 10) || 2;
+
+  if (nextCapacity < currentParticipants) {
+    const error = new Error("capacity cannot be lower than current participants");
+    error.status = 400;
+    throw error;
+  }
+
   const [result] = await pool.query(
     `UPDATE posts SET
      title=?, content=?, date=?, time=?, place=?, latitude=?, longitude=?,
@@ -326,9 +368,7 @@ export const toggleJoinPost = async (userId, postId) => {
   const post = await getPost(postId);
   if (!post) return null;
   if (String(post.user_id) === String(userId)) {
-    const error = new Error("cannot join own post");
-    error.status = 400;
-    throw error;
+    return getPostWithDetails(postId, userId);
   }
 
   const [[existing]] = await pool.query(
@@ -337,8 +377,16 @@ export const toggleJoinPost = async (userId, postId) => {
   );
 
   if (existing) {
+    const wasFull = (post.participants || 1) >= (post.capacity || 2);
     await pool.query("DELETE FROM post_participants WHERE id=?", [existing.id]);
+    await syncPostParticipantState(postId, post.capacity, post.status, wasFull);
   } else {
+    if (post.status === STATUS_CLOSED) {
+      const error = new Error("recruitment is closed");
+      error.status = 400;
+      throw error;
+    }
+
     // Blocked users cannot rejoin a post room.
     const [banRows] = await pool.query(
       "SELECT id FROM post_bans WHERE post_id = ? AND user_id = ?",
@@ -366,22 +414,8 @@ export const toggleJoinPost = async (userId, postId) => {
       "INSERT INTO post_participants (user_id, post_id) VALUES (?, ?)",
       [userId, postId],
     );
+    await syncPostParticipantState(postId, post.capacity, post.status, false);
   }
-
-  const [[{ count }]] = await pool.query(
-    "SELECT COUNT(*) AS count FROM post_participants WHERE post_id=?",
-    [postId],
-  );
-  const nextParticipants = 1 + count;
-  const nextStatus =
-    nextParticipants >= (post.capacity || 2)
-      ? "\ubaa8\uc9d1\uc644\ub8cc"
-      : "\ubaa8\uc9d1\uc911";
-
-  await pool.query(
-    "UPDATE posts SET participants=?, status=? WHERE post_id=?",
-    [nextParticipants, nextStatus, postId],
-  );
 
   return getPostWithDetails(postId);
 };
@@ -429,21 +463,8 @@ export const leavePost = async (userId, postId) => {
     );
   }
 
-  const [[{ count }]] = await pool.query(
-    "SELECT COUNT(*) AS count FROM post_participants WHERE post_id=?",
-    [postId],
-  );
-
-  const nextParticipants = 1 + count;
-  const nextStatus =
-    nextParticipants >= (post.capacity || 2)
-      ? "\ubaa8\uc9d1\uc644\ub8cc"
-      : "\ubaa8\uc9d1\uc911";
-
-  await pool.query(
-    "UPDATE posts SET participants=?, status=? WHERE post_id=?",
-    [nextParticipants, nextStatus, postId],
-  );
+  const wasFull = (post.participants || 1) >= (post.capacity || 2);
+  await syncPostParticipantState(postId, post.capacity, post.status, wasFull);
 
   const leaveMsgContent = `${user.nickname}\ub2d8\uc774 \ud1f4\uc7a5\ud558\uc168\uc2b5\ub2c8\ub2e4.`;
   await pool.query(

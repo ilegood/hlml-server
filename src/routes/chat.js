@@ -28,13 +28,6 @@ const chatStorage = multer.diskStorage({
 const chatUpload = multer({
   storage: chatStorage,
   limits: { fileSize: 50 * 1024 * 1024 },
-  fileFilter: (_req, file, cb) => {
-    if (file.mimetype.startsWith("image/") || file.mimetype.startsWith("video/")) {
-      cb(null, true);
-      return;
-    }
-    cb(new Error("Only image and video files are allowed"));
-  },
 });
 
 const hasBlockedRelation = async (userA, userB) => {

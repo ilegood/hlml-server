@@ -81,7 +81,7 @@ export const registerRoomSocket = (io, socket) => {
         }
 
         const [roomRows] = await pool.query(
-          `SELECT p.title, p.image, u.nickname AS author
+          `SELECT p.title, p.image, p.place, p.latitude, p.longitude, u.nickname AS author
            FROM posts p
            JOIN users u ON p.user_id = u.user_id
            WHERE p.post_id = ?`,
@@ -93,6 +93,9 @@ export const registerRoomSocket = (io, socket) => {
             title: roomRows[0].title,
             image: roomRows[0].image,
             author: roomRows[0].author,
+            place: roomRows[0].place,
+            latitude: roomRows[0].latitude,
+            longitude: roomRows[0].longitude,
             isDM: false,
           });
         }
@@ -199,11 +202,14 @@ export const registerRoomSocket = (io, socket) => {
           [roomIdInt],
         );
         const [[postCapacity]] = await pool.query(
-          "SELECT capacity FROM posts WHERE post_id = ?",
+          "SELECT capacity, participants, status FROM posts WHERE post_id = ?",
           [roomIdInt],
         );
         const participants = 1 + count;
+        const wasFull =
+          (postCapacity?.participants || 1) >= (postCapacity?.capacity || 2);
         const status =
+          (postCapacity?.status === "\ubaa8\uc9d1\uc644\ub8cc" && !wasFull) ||
           participants >= (postCapacity?.capacity || 2)
             ? "\ubaa8\uc9d1\uc644\ub8cc"
             : "\ubaa8\uc9d1\uc911";
