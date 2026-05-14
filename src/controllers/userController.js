@@ -101,6 +101,26 @@ export const getProfile = async (req, res) => {
   }
 };
 
+export const getUserPublicProfile = async (req, res) => {
+  const { id } = req.params;
+  try {
+    const user = await findUserById(id);
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+    // Only return public information
+    res.json({
+      user_id: user.user_id,
+      nickname: user.nickname,
+      bio: user.bio,
+      profile_img: user.profile_img,
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Internal server error" });
+  }
+};
+
 export const updateProfile = async (req, res) => {
   const { nickname, bio, currentPassword, newPassword } = req.body;
   const userId = req.userId;
