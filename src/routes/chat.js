@@ -10,15 +10,26 @@ const router = express.Router();
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const uploadDir = path.join(__dirname, "..", "uploads", "chat");
 
+const countHangul = (value) => (String(value).match(/[가-힣]/g) || []).length;
+
+const normalizeOriginalName = (name) => {
+  const value = String(name || "file");
+  const decoded = Buffer.from(value, "latin1").toString("utf8");
+  return countHangul(decoded) > countHangul(value) ? decoded : value;
+};
+
 const chatStorage = multer.diskStorage({
   destination: (_req, _file, cb) => {
     fs.mkdirSync(uploadDir, { recursive: true });
     cb(null, uploadDir);
   },
   filename: (_req, file, cb) => {
-    const ext = path.extname(file.originalname);
+    const originalName = normalizeOriginalName(file.originalname);
+    file.originalname = originalName;
+
+    const ext = path.extname(originalName);
     const safeBase = path
-      .basename(file.originalname, ext)
+      .basename(originalName, ext)
       .replace(/[^a-zA-Z0-9_-]/g, "")
       .slice(0, 40);
     cb(null, `${Date.now()}-${safeBase || "upload"}${ext}`);
@@ -48,10 +59,28 @@ router.post("/upload", auth, chatUpload.single("file"), (req, res) => {
 
   res.json({
     url: `/uploads/chat/${req.file.filename}`,
-    name: req.file.originalname,
+    name: normalizeOriginalName(req.file.originalname),
     mimeType: req.file.mimetype,
     size: req.file.size,
   });
+});
+
+router.get("/download/:filename", (req, res) => {
+  const filename = path.basename(req.params.filename || "");
+  const filePath = path.join(uploadDir, filename);
+  const resolvedUploadDir = path.resolve(uploadDir);
+  const resolvedFilePath = path.resolve(filePath);
+
+  if (!resolvedFilePath.startsWith(resolvedUploadDir + path.sep)) {
+    return res.status(400).json({ message: "invalid file path" });
+  }
+
+  if (!fs.existsSync(resolvedFilePath)) {
+    return res.status(404).json({ message: "file not found" });
+  }
+
+  const downloadName = normalizeOriginalName(req.query.name || filename);
+  res.download(resolvedFilePath, downloadName);
 });
 
 // 1. 내 DM 목록 조회
