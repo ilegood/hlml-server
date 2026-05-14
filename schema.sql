@@ -11,6 +11,7 @@ CREATE TABLE users (
     bio          TEXT,
     total_joins  INT DEFAULT 0,
     cancel_count INT DEFAULT 0,
+    report_count INT DEFAULT 0,
     is_deleted   BOOLEAN DEFAULT FALSE,
     created_at   DATETIME DEFAULT NOW()
 );

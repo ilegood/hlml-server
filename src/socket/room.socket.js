@@ -1,4 +1,4 @@
-import pool from "../db.js";
+import { query } from "../db.js";
 import { parseJsonArray, toInt } from "./utils.js";
 
 const formatMessageRows = (rows) =>
@@ -15,7 +15,7 @@ export const registerRoomSocket = (io, socket) => {
   const isDmRoom = (roomId) => String(roomId).startsWith("dm_");
 
   const saveSystemMessage = async ({ roomId, userId, content }) => {
-    const [result] = await pool.query(
+    const [result] = await query(
       "INSERT INTO messages (room_id, user_id, nickname, content, is_system) VALUES (?, ?, ?, ?, ?)",
       [roomId, userId, "System", content, 1],
     );
@@ -43,7 +43,7 @@ export const registerRoomSocket = (io, socket) => {
         const dmId = toInt(roomStr.slice(3));
         if (!dmId || !userIdInt) return;
 
-        const [roomRows] = await pool.query(
+        const [roomRows] = await query(
           `SELECT
              u.nickname AS targetNickname,
              u.profile_img AS targetProfileImg
@@ -68,7 +68,7 @@ export const registerRoomSocket = (io, socket) => {
         if (!roomIdInt) return;
 
         if (userIdInt) {
-          const [banRows] = await pool.query(
+          const [banRows] = await query(
             "SELECT id FROM post_bans WHERE post_id = ? AND user_id = ?",
             [roomIdInt, userIdInt],
           );
@@ -80,7 +80,7 @@ export const registerRoomSocket = (io, socket) => {
           }
         }
 
-        const [roomRows] = await pool.query(
+        const [roomRows] = await query(
           `SELECT p.title, p.image, p.place, p.latitude, p.longitude, u.nickname AS author
            FROM posts p
            JOIN users u ON p.user_id = u.user_id
@@ -102,7 +102,7 @@ export const registerRoomSocket = (io, socket) => {
 
         if (nickname && userIdInt) {
           const joinMsgContent = `${nickname}\ub2d8\uc774 \uc785\uc7a5\ud558\uc168\uc2b5\ub2c8\ub2e4.`;
-          const [existing] = await pool.query(
+          const [existing] = await query(
             "SELECT id FROM messages WHERE room_id = ? AND user_id = ? AND is_system = 1 AND content = ?",
             [roomStr, userIdInt, joinMsgContent],
           );
@@ -119,7 +119,7 @@ export const registerRoomSocket = (io, socket) => {
         }
       }
 
-      const [rows] = await pool.query(
+      const [rows] = await query(
         `SELECT
            m.*,
            ANY_VALUE(u.nickname) AS latestNickname,
@@ -172,14 +172,14 @@ export const registerRoomSocket = (io, socket) => {
       const roomStr = String(roomIdInt);
 
       try {
-        const [[post]] = await pool.query(
+        const [[post]] = await query(
           `SELECT p.post_id, u.nickname AS author
            FROM posts p
            JOIN users u ON p.user_id = u.user_id
            WHERE p.post_id = ?`,
           [roomIdInt],
         );
-        const [[user]] = await pool.query(
+        const [[user]] = await query(
           "SELECT nickname FROM users WHERE user_id = ?",
           [myUserIdInt],
         );
@@ -189,19 +189,19 @@ export const registerRoomSocket = (io, socket) => {
           return;
         }
 
-        await pool.query(
+        await query(
           "DELETE FROM post_participants WHERE post_id = ? AND user_id = ?",
           [roomIdInt, targetUserIdInt],
         );
-        await pool.query(
+        await query(
           "INSERT IGNORE INTO post_bans (post_id, user_id) VALUES (?, ?)",
           [roomIdInt, targetUserIdInt],
         );
-        const [[{ count }]] = await pool.query(
+        const [[{ count }]] = await query(
           "SELECT COUNT(*) AS count FROM post_participants WHERE post_id = ?",
           [roomIdInt],
         );
-        const [[postCapacity]] = await pool.query(
+        const [[postCapacity]] = await query(
           "SELECT capacity, participants, status FROM posts WHERE post_id = ?",
           [roomIdInt],
         );
@@ -213,7 +213,7 @@ export const registerRoomSocket = (io, socket) => {
           participants >= (postCapacity?.capacity || 2)
             ? "\ubaa8\uc9d1\uc644\ub8cc"
             : "\ubaa8\uc9d1\uc911";
-        await pool.query(
+        await query(
           "UPDATE posts SET participants = ?, status = ? WHERE post_id = ?",
           [participants, status, roomIdInt],
         );

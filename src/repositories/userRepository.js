@@ -48,7 +48,7 @@ export const updateUserProfile = async (userId, nickname, bio, hashedPassword, p
 
 export const searchUsers = async (query, myId) => {
   const [rows] = await pool.query(
-    `SELECT user_id AS id, nickname, profile_img
+    `SELECT user_id AS id, nickname, profile_img, COALESCE(report_count, 0) AS report_count
      FROM users
      WHERE nickname LIKE ?
      AND is_deleted = FALSE
