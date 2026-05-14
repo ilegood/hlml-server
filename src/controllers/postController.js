@@ -2,17 +2,17 @@ import * as postService from "../services/postService.js";
 
 export const getPosts = async (req, res) => {
   try {
-    const data = await postService.getPosts();
+    const data = await postService.getPosts(req.userId);
     res.json(data);
   } catch (e) {
     console.error(e);
-    res.status(500).json({ message: "server error" });
+    res.status(500).json({ message: `server error: ${e.message}` });
   }
 };
 
 export const getPost = async (req, res) => {
   try {
-    const data = await postService.getPost(req.params.id);
+    const data = await postService.getPost(req.params.id, req.userId);
     if (!data) return res.status(404).json({ message: "not found" });
     res.json(data);
   } catch (e) {
@@ -74,9 +74,20 @@ export const joinPost = async (req, res) => {
   }
 };
 
+export const leavePost = async (req, res) => {
+  try {
+    const data = await postService.leavePost(req.userId, req.params.id);
+    if (!data) return res.status(404).json({ message: "not found" });
+    res.json(data);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ message: "leave error" });
+  }
+};
+
 export const getComments = async (req, res) => {
   try {
-    const data = await postService.getComments(req.params.id);
+    const data = await postService.getComments(req.params.id, req.userId);
     res.json(data);
   } catch (e) {
     console.error(e);
@@ -87,7 +98,7 @@ export const getComments = async (req, res) => {
 export const createComment = async (req, res) => {
   try {
     await postService.createComment(req);
-    const data = await postService.getPost(req.params.id);
+    const data = await postService.getPost(req.params.id, req.userId);
     res.json(data);
   } catch (e) {
     console.error(e);
@@ -112,5 +123,25 @@ export const deleteComment = async (req, res) => {
   } catch (e) {
     console.error(e);
     res.status(500).json({ message: "comment delete error" });
+  }
+};
+
+export const getKickedPosts = async (req, res) => {
+  try {
+    const data = await postService.getKickedPosts(req.userId);
+    res.json(data);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ message: "get kicked posts error" });
+  }
+};
+
+export const deletePostBan = async (req, res) => {
+  try {
+    await postService.deletePostBan(req.userId, req.params.id);
+    res.json({ success: true });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ message: "delete post ban error" });
   }
 };

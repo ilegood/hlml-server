@@ -6,6 +6,8 @@ import { fileURLToPath } from "url";
 import { Server } from "socket.io";
 
 import { env } from "./config/env.js";
+import chatRoutes from "./routes/chat.js";
+import friendsRoutes from "./routes/friends.js";
 import postRoutes from "./routes/post.js";
 import userRoutes from "./routes/user.js";
 import { registerChatSocket } from "./socket/chat.socket.js";
@@ -21,16 +23,14 @@ const io = new Server(server, {
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-app.use(
-  cors({
-    origin: env.clientOrigins,
-  }),
-);
+app.use(cors({ origin: env.clientOrigins }));
 app.use(express.json());
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
+app.use("/friends", friendsRoutes);
 app.use("/posts", postRoutes);
 app.use("/users", userRoutes);
+app.use("/chat", chatRoutes);
 
 registerChatSocket(io);
 

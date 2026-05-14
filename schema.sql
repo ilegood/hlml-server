@@ -85,7 +85,7 @@ CREATE TABLE post_participants (
 
 CREATE TABLE messages (
     id         INT AUTO_INCREMENT PRIMARY KEY,
-    room_id    INT NOT NULL,
+    room_id    VARCHAR(50) NOT NULL,
     user_id    INT NOT NULL,
     nickname   VARCHAR(100) NOT NULL,
     content    TEXT NOT NULL,
@@ -94,7 +94,6 @@ CREATE TABLE messages (
     is_deleted BOOLEAN DEFAULT FALSE,
     parent_id  INT DEFAULT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (room_id) REFERENCES posts(post_id) ON DELETE CASCADE,
     FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE,
     FOREIGN KEY (parent_id) REFERENCES messages(id) ON DELETE SET NULL,
     INDEX idx_messages_room_id (room_id),
@@ -122,3 +121,40 @@ CREATE TABLE message_reads (
     FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE,
     INDEX idx_message_reads_user_id (user_id)
 );
+
+-- Chat appointment map locations
+CREATE TABLE World_map (
+    map_id      INT AUTO_INCREMENT PRIMARY KEY,
+    post_id     INT NOT NULL,
+    place_name  VARCHAR(255) NOT NULL,
+    address     VARCHAR(255) NOT NULL,
+    latitude    DECIMAL(10, 8) NOT NULL,
+    longitude   DECIMAL(11, 8) NOT NULL,
+    FOREIGN KEY (post_id) REFERENCES posts(post_id) ON DELETE CASCADE
+);
+
+-- 10. Direct message rooms
+CREATE TABLE dm_rooms (
+    id          INT AUTO_INCREMENT PRIMARY KEY,
+    user1_id    INT NOT NULL,
+    user2_id    INT NOT NULL,
+    created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_dm (user1_id, user2_id),
+    FOREIGN KEY (user1_id) REFERENCES users(user_id) ON DELETE CASCADE,
+    FOREIGN KEY (user2_id) REFERENCES users(user_id) ON DELETE CASCADE
+);
+
+DROP TABLE IF EXISTS message_reads_status;
+
+-- 11. Post kick/ban history
+CREATE TABLE post_bans (
+    id         INT AUTO_INCREMENT PRIMARY KEY,
+    post_id    INT NOT NULL,
+    user_id    INT NOT NULL,
+    is_hidden  BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (post_id) REFERENCES posts(post_id) ON DELETE CASCADE,
+    FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE,
+    UNIQUE KEY uq_ban (post_id, user_id)
+);
+
