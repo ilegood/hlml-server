@@ -12,14 +12,13 @@ import {
   updateUserProfile,
   searchUsers,
   deleteUserById,
-  findUserNicknameById,
-  getPostsUserIdExistence,
+} from "../repositories/userRepository.js";
+import {
   getJoinedPostsForUser,
-  deletePostsByAuthor,
   getPostCapacity,
   countPostParticipants,
   updatePostParticipantsAndStatus,
-} from "../repositories/userRepository.js";
+} from "../repositories/postRepository.js";
 
 export const registerUser = async (req, res) => {
   const { nickname, email, password, birthday, gender, phone_number } = req.body;

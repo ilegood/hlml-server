@@ -44,7 +44,10 @@ export const updatePost = async (req, res) => {
 
 export const deletePost = async (req, res) => {
   try {
-    const affectedRows = await postService.deletePost(req.params.id, req.userId);
+    const affectedRows = await postService.deletePost(
+      req.params.id,
+      req.userId,
+    );
     if (!affectedRows) return res.status(403).json({ message: "forbidden" });
     res.json({ success: true });
   } catch (e) {

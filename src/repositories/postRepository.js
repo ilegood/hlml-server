@@ -338,6 +338,45 @@ export const deletePost = async (id, userId) => {
   return result.affectedRows;
 };
 
+export const getJoinedPostsForUser = async (userId, connection) => {
+  const [joinedPosts] = await connection.query(
+    `SELECT pp.post_id
+     FROM post_participants pp
+     JOIN posts p ON pp.post_id = p.post_id
+     WHERE pp.user_id = ? AND p.user_id != ?`,
+    [userId, userId],
+  );
+  return joinedPosts;
+};
+
+export const getPostCapacity = async (postId, connection) => {
+  const [[postRow]] = await connection.query(
+    "SELECT capacity FROM posts WHERE post_id = ?",
+    [postId],
+  );
+  return postRow;
+};
+
+export const countPostParticipants = async (postId, connection) => {
+  const [[participantCount]] = await connection.query(
+    "SELECT COUNT(*) AS count FROM post_participants WHERE post_id = ?",
+    [postId],
+  );
+  return participantCount.count;
+};
+
+export const updatePostParticipantsAndStatus = async (
+  postId,
+  currentParticipants,
+  status,
+  connection,
+) => {
+  await connection.query(
+    "UPDATE posts SET participants = ?, status = ? WHERE post_id = ?",
+    [currentParticipants, status, postId],
+  );
+};
+
 export const toggleLikePost = async (userId, postId) => {
   const post = await getPost(postId);
   if (!post) return null;

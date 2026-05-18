@@ -1,8 +1,6 @@
 import cors from "cors";
 import express from "express";
 import http from "http";
-import path from "path";
-import { fileURLToPath } from "url";
 import { Server } from "socket.io";
 
 import { env } from "./config/env.js";
@@ -22,20 +20,14 @@ const io = new Server(server, {
   },
 });
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-
 app.use(cors({ origin: env.clientOrigins }));
 app.use(express.json());
-app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
 app.use("/friends", friendsRoutes);
 app.use("/posts", postRoutes);
 app.use("/reports", reportRoutes);
 app.use("/users", userRoutes);
 app.use("/chat", chatRoutes);
-
-registerChatSocket(io);
-app.set("io", io);
 
 server.listen(env.port, () => {
   console.log(`Server running on ${env.port}`);

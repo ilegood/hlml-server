@@ -1,9 +1,11 @@
 import { query } from "../db.js";
+import { toUtcIsoString } from "../utils/time.js";
 import { parseJsonArray, toInt } from "./utils.js";
 
 const formatMessageRows = (rows) =>
   rows.map((row) => ({
     ...row,
+    created_at: toUtcIsoString(row.created_at),
     nickname: row.is_system
       ? row.nickname
       : row.latestNickname || row.nickname,
