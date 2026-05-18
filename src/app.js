@@ -9,6 +9,7 @@ import { env } from "./config/env.js";
 import chatRoutes from "./routes/chat.js";
 import friendsRoutes from "./routes/friends.js";
 import postRoutes from "./routes/post.js";
+import reportRoutes from "./routes/report.js";
 import userRoutes from "./routes/user.js";
 import { registerChatSocket } from "./socket/chat.socket.js";
 
@@ -29,10 +30,12 @@ app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
 app.use("/friends", friendsRoutes);
 app.use("/posts", postRoutes);
+app.use("/reports", reportRoutes);
 app.use("/users", userRoutes);
 app.use("/chat", chatRoutes);
 
 registerChatSocket(io);
+app.set("io", io);
 
 server.listen(env.port, () => {
   console.log(`Server running on ${env.port}`);

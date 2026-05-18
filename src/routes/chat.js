@@ -1,16 +1,13 @@
 import express from "express";
-import fs from "fs";
 import multer from "multer";
-import path from "path";
-import { fileURLToPath } from "url";
-import pool from "../db.js";
+import pool, { query } from "../db.js";
 import auth from "../middleware/auth.js";
+import { cloudinary } from "../middleware/cloudinary.js";
 
 const router = express.Router();
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const uploadDir = path.join(__dirname, "..", "uploads", "chat");
 
-const countHangul = (value) => (String(value).match(/[가-힣]/g) || []).length;
+const countHangul = (value) =>
+  (String(value).match(/[\uAC00-\uD7A3]/g) || []).length;
 
 const normalizeOriginalName = (name) => {
   const value = String(name || "file");
@@ -18,31 +15,46 @@ const normalizeOriginalName = (name) => {
   return countHangul(decoded) > countHangul(value) ? decoded : value;
 };
 
-const chatStorage = multer.diskStorage({
-  destination: (_req, _file, cb) => {
-    fs.mkdirSync(uploadDir, { recursive: true });
-    cb(null, uploadDir);
-  },
-  filename: (_req, file, cb) => {
-    const originalName = normalizeOriginalName(file.originalname);
-    file.originalname = originalName;
-
-    const ext = path.extname(originalName);
-    const safeBase = path
-      .basename(originalName, ext)
-      .replace(/[^a-zA-Z0-9_-]/g, "")
-      .slice(0, 40);
-    cb(null, `${Date.now()}-${safeBase || "upload"}${ext}`);
-  },
-});
-
 const chatUpload = multer({
-  storage: chatStorage,
+  storage: multer.memoryStorage(),
   limits: { fileSize: 50 * 1024 * 1024 },
 });
 
+const uploadChatFileToCloudinary = (file) => {
+  const originalName = normalizeOriginalName(file.originalname);
+
+  return new Promise((resolve, reject) => {
+    const stream = cloudinary.uploader.upload_stream(
+      {
+        folder: "hlml_uploads/chat",
+        resource_type: "auto",
+        use_filename: true,
+        unique_filename: true,
+        filename_override: originalName,
+      },
+      (error, result) => {
+        if (error) {
+          reject(error);
+          return;
+        }
+
+        resolve({ ...result, originalName });
+      },
+    );
+
+    stream.end(file.buffer);
+  });
+};
+
+const getCloudinaryDownloadUrl = ({ publicId, resourceType, filename }) =>
+  cloudinary.url(publicId, {
+    secure: true,
+    resource_type: resourceType || "auto",
+    flags: `attachment:${filename || "download"}`,
+  });
+
 const hasBlockedRelation = async (userA, userB) => {
-  const [[relation]] = await pool.query(
+  const [[relation]] = await query(
     `SELECT id FROM user_relations
      WHERE status = 'blocked'
        AND ((requester_id = ? AND target_id = ?) OR (requester_id = ? AND target_id = ?))
@@ -52,44 +64,42 @@ const hasBlockedRelation = async (userA, userB) => {
   return Boolean(relation);
 };
 
-router.post("/upload", auth, chatUpload.single("file"), (req, res) => {
+router.post("/upload", auth, chatUpload.single("file"), async (req, res) => {
   if (!req.file) {
     return res.status(400).json({ message: "file is required" });
   }
 
-  res.json({
-    url: `/uploads/chat/${req.file.filename}`,
-    name: normalizeOriginalName(req.file.originalname),
-    mimeType: req.file.mimetype,
-    size: req.file.size,
-  });
+  try {
+    const result = await uploadChatFileToCloudinary(req.file);
+    const resourceType =
+      result.resource_type ||
+      (req.file.mimetype.startsWith("video/") ? "video" : "image");
+
+    res.json({
+      url: result.secure_url,
+      downloadUrl: getCloudinaryDownloadUrl({
+        publicId: result.public_id,
+        resourceType,
+        filename: result.originalName,
+      }),
+      publicId: result.public_id,
+      resourceType,
+      name: result.originalName,
+      mimeType: req.file.mimetype,
+      size: req.file.size,
+    });
+  } catch (err) {
+    console.error("Cloudinary chat upload failed:", err);
+    res.status(500).json({ message: "file upload failed" });
+  }
 });
 
-router.get("/download/:filename", (req, res) => {
-  const filename = path.basename(req.params.filename || "");
-  const filePath = path.join(uploadDir, filename);
-  const resolvedUploadDir = path.resolve(uploadDir);
-  const resolvedFilePath = path.resolve(filePath);
-
-  if (!resolvedFilePath.startsWith(resolvedUploadDir + path.sep)) {
-    return res.status(400).json({ message: "invalid file path" });
-  }
-
-  if (!fs.existsSync(resolvedFilePath)) {
-    return res.status(404).json({ message: "file not found" });
-  }
-
-  const downloadName = normalizeOriginalName(req.query.name || filename);
-  res.download(resolvedFilePath, downloadName);
-});
-
-// 1. 내 DM 목록 조회
 router.get("/rooms/:roomId/block-warning", auth, async (req, res) => {
   const myId = req.userId;
   const { roomId } = req.params;
 
   try {
-    const [blockedUsers] = await pool.query(
+    const [blockedUsers] = await query(
       `SELECT u.user_id AS id, u.nickname
        FROM user_relations r
        JOIN users u ON u.user_id = r.target_id
@@ -101,24 +111,21 @@ router.get("/rooms/:roomId/block-warning", auth, async (req, res) => {
       return res.json({ shouldWarn: false, blockedUsers: [] });
     }
 
-    const blockedIds = blockedUsers.map((user) => Number(user.id));
-    
-    // Fetch post creator
-    const [postCreatorRows] = await pool.query(
-      `SELECT user_id AS id FROM posts WHERE post_id = ?`,
+    const [postCreatorRows] = await query(
+      "SELECT user_id AS id FROM posts WHERE post_id = ?",
       [roomId],
     );
 
-    // Fetch post participants
-    const [postParticipantsRows] = await pool.query(
-      `SELECT user_id AS id FROM post_participants WHERE post_id = ?`,
+    const [postParticipantsRows] = await query(
+      "SELECT user_id AS id FROM post_participants WHERE post_id = ?",
       [roomId],
     );
 
-    // Combine all members and filter by blockedIds in JavaScript
-    const allMembersInRoom = [...postCreatorRows, ...postParticipantsRows];
-    const memberIdsInRoom = new Set(allMembersInRoom.map((member) => Number(member.id)));
-    
+    const memberIdsInRoom = new Set(
+      [...postCreatorRows, ...postParticipantsRows].map((member) =>
+        Number(member.id),
+      ),
+    );
     const presentBlockedUsers = blockedUsers.filter((user) =>
       memberIdsInRoom.has(Number(user.id)),
     );
@@ -129,16 +136,17 @@ router.get("/rooms/:roomId/block-warning", auth, async (req, res) => {
     });
   } catch (err) {
     console.error(err);
-    res.status(500).json({ message: `blocked user warning lookup failed: ${err.message}` });
+    res.status(500).json({
+      message: `blocked user warning lookup failed: ${err.message}`,
+    });
   }
 });
 
 router.get("/dm", auth, async (req, res) => {
   const myId = req.userId;
   try {
-    const [rows] = await pool.query(
-      `
-      SELECT 
+    const [rows] = await query(
+      `SELECT
         dr.id as roomId,
         u.user_id as targetId,
         u.nickname as targetNickname,
@@ -153,8 +161,7 @@ router.get("/dm", auth, async (req, res) => {
           WHERE r.status = 'blocked'
             AND ((r.requester_id = ? AND r.target_id = u.user_id) OR (r.requester_id = u.user_id AND r.target_id = ?))
         )
-      ORDER BY lastMessageTime DESC
-    `,
+      ORDER BY lastMessageTime DESC`,
       [myId, myId, myId, myId, myId, myId],
     );
     res.json(rows);
@@ -164,12 +171,13 @@ router.get("/dm", auth, async (req, res) => {
   }
 });
 
-// 2. 특정 유저와의 DM 방 조회 또는 생성
 router.post("/dm", auth, async (req, res) => {
   const myId = req.userId;
   const { targetId } = req.body;
 
-  if (!targetId) return res.status(400).json({ message: "대상 ID가 필요합니다." });
+  if (!targetId) {
+    return res.status(400).json({ message: "대상 ID가 필요합니다." });
+  }
 
   const u1 = Math.min(myId, targetId);
   const u2 = Math.max(myId, targetId);
@@ -179,8 +187,7 @@ router.post("/dm", auth, async (req, res) => {
       return res.status(403).json({ message: "blocked user" });
     }
 
-    // 기존 방 확인
-    const [[existing]] = await pool.query(
+    const [[existing]] = await query(
       "SELECT id FROM dm_rooms WHERE user1_id = ? AND user2_id = ?",
       [u1, u2],
     );
@@ -189,8 +196,7 @@ router.post("/dm", auth, async (req, res) => {
       return res.json({ roomId: existing.id });
     }
 
-    // 새 방 생성
-    const [result] = await pool.query(
+    const [result] = await query(
       "INSERT INTO dm_rooms (user1_id, user2_id) VALUES (?, ?)",
       [u1, u2],
     );
@@ -201,32 +207,77 @@ router.post("/dm", auth, async (req, res) => {
   }
 });
 
-// 3. DM 방 상세 정보 조회
 router.get("/dm/:roomId", auth, async (req, res) => {
   const myId = req.userId;
   const { roomId } = req.params;
 
   try {
-    const [[room]] = await pool.query(
-      `
-      SELECT 
+    const [[room]] = await query(
+      `SELECT
         dr.id,
         u.user_id as targetId,
         u.nickname as targetNickname,
         u.profile_img as targetProfileImg
       FROM dm_rooms dr
       JOIN users u ON (dr.user1_id = u.user_id AND dr.user2_id = ?) OR (dr.user2_id = u.user_id AND dr.user1_id = ?)
-      WHERE dr.id = ? AND (dr.user1_id = ? OR dr.user2_id = ?)
-    `,
+      WHERE dr.id = ? AND (dr.user1_id = ? OR dr.user2_id = ?)`,
       [myId, myId, roomId, myId, myId],
     );
 
-    if (!room) return res.status(404).json({ message: "방을 찾을 수 없습니다." });
+    if (!room) {
+      return res.status(404).json({ message: "방을 찾을 수 없습니다." });
+    }
 
     res.json(room);
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: "DM 정보 조회 실패" });
+  }
+});
+
+router.delete("/dm/:roomId", auth, async (req, res) => {
+  const myId = req.userId;
+  const { roomId } = req.params;
+  const roomIdInt = Number(roomId);
+
+  if (!roomIdInt) {
+    return res.status(400).json({ message: "invalid room id" });
+  }
+
+  const connection = await pool.getConnection();
+
+  try {
+    await connection.beginTransaction();
+
+    const [[room]] = await connection.query(
+      "SELECT id FROM dm_rooms WHERE id = ? AND (user1_id = ? OR user2_id = ?)",
+      [roomIdInt, myId, myId],
+    );
+
+    if (!room) {
+      await connection.rollback();
+      return res.status(404).json({ message: "room not found" });
+    }
+
+    const roomKey = `dm_${roomIdInt}`;
+    await connection.query("DELETE FROM messages WHERE room_id = ?", [roomKey]);
+    await connection.query("DELETE FROM dm_rooms WHERE id = ?", [roomIdInt]);
+
+    await connection.commit();
+
+    const io = req.app.get("io");
+    io?.to(roomKey)?.emit("dm_room_deleted", {
+      roomId: roomIdInt,
+      deletedBy: myId,
+    });
+
+    res.json({ success: true });
+  } catch (err) {
+    await connection.rollback();
+    console.error("DM delete failed:", err);
+    res.status(500).json({ message: "dm delete failed" });
+  } finally {
+    connection.release();
   }
 });
 
