@@ -10,6 +10,7 @@ import postRoutes from "./routes/post.js";
 import reportRoutes from "./routes/report.js";
 import userRoutes from "./routes/user.js";
 import { registerChatSocket } from "./socket/chat.socket.js";
+import { startPostDeletionJob } from "./workers/deleteExpiredPosts.js";
 
 const app = express();
 const server = http.createServer(app);
@@ -28,6 +29,10 @@ app.use("/posts", postRoutes);
 app.use("/reports", reportRoutes);
 app.use("/users", userRoutes);
 app.use("/chat", chatRoutes);
+
+registerChatSocket(io);
+
+startPostDeletionJob(io);
 
 server.listen(env.port, () => {
   console.log(`Server running on ${env.port}`);
