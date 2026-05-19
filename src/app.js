@@ -10,6 +10,7 @@ import postRoutes from "./routes/post.js";
 import reportRoutes from "./routes/report.js";
 import userRoutes from "./routes/user.js";
 import { registerChatSocket } from "./socket/chat.socket.js";
+import { startAppointmentReminderJob } from "./workers/appointmentReminders.js";
 import { startPostDeletionJob } from "./workers/deleteExpiredPosts.js";
 
 const app = express();
@@ -36,6 +37,7 @@ app.set("io", io);
 
 registerChatSocket(io);
 
+startAppointmentReminderJob(io);
 startPostDeletionJob(io);
 
 server.listen(env.port, () => {
