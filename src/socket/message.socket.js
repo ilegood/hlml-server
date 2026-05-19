@@ -27,7 +27,10 @@ const emitUnreadChanged = async (io, roomStr, exceptUserId = null) => {
   const memberIds = await getRoomMemberIds(roomStr);
   memberIds.forEach((memberId) => {
     if (exceptUserId && Number(memberId) === Number(exceptUserId)) return;
-    io.to(`user_${memberId}`).emit("chat_unread_changed", { roomId: roomStr });
+    io.to(`user_${memberId}`).emit("chat_unread_changed", {
+      roomId: roomStr,
+      reason: "message",
+    });
   });
 };
 
@@ -206,7 +209,10 @@ export const registerMessageSocket = (io, socket) => {
           messageId,
           readCount: total,
         });
-        await emitUnreadChanged(io, roomStr, userIdInt);
+        io.to(`user_${userIdInt}`).emit("chat_unread_changed", {
+          roomId: roomStr,
+          reason: "read",
+        });
       }
     } catch (error) {
       console.error("Failed to mark message read:", error);
