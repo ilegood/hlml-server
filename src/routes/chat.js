@@ -278,6 +278,16 @@ const getSeoulDateTimeString = (offsetMinutes = 0) => {
   return `${values.year}-${values.month}-${values.day} ${values.hour}:${values.minute}:${values.second}`;
 };
 
+const expirationDeadlineSql = `
+  TIMESTAMP(
+    DATE_ADD(p.date, INTERVAL 1 DAY),
+    CASE
+      WHEN p.time IS NOT NULL AND p.time >= '22:00:00' THEN '12:00:00'
+      ELSE '00:00:00'
+    END
+  )
+`;
+
 const getAppointmentReminders = async (userId) => {
   const now = getSeoulDateTimeString();
   const inThirtyMinutes = getSeoulDateTimeString(30);
@@ -300,6 +310,30 @@ const getAppointmentReminders = async (userId) => {
   );
 
   return rows;
+};
+
+const getDeletionWarnings = async (userId) => {
+  const warningStart = getSeoulDateTimeString(0);
+  const warningEnd = getSeoulDateTimeString(30);
+
+  const [rows] = await query(
+    `SELECT DISTINCT
+       p.post_id AS roomId,
+       p.title,
+       p.date,
+       ${expirationDeadlineSql} AS deletesAt
+     FROM posts p
+     LEFT JOIN post_participants pp ON pp.post_id = p.post_id
+     WHERE (p.user_id = ? OR pp.user_id = ?)
+       AND p.date IS NOT NULL
+       AND ${expirationDeadlineSql} BETWEEN ? AND ?`,
+    [userId, userId, warningStart, warningEnd],
+  );
+
+  return rows.map((row) => ({
+    ...row,
+    deletesAt: `${String(row.deletesAt).replace(" ", "T")}+09:00`,
+  }));
 };
 
 router.get("/unread-summary", auth, async (req, res) => {
@@ -352,10 +386,11 @@ router.get("/notifications", auth, async (req, res) => {
   const myId = req.userId;
 
   try {
-    const [groupRooms, dmRooms, reminders] = await Promise.all([
+    const [groupRooms, dmRooms, reminders, deletionWarnings] = await Promise.all([
       getMyGroupRooms(myId),
       getMyDmRooms(myId),
       getAppointmentReminders(myId),
+      getDeletionWarnings(myId),
     ]);
 
     const allRoomKeys = [
@@ -389,6 +424,15 @@ router.get("/notifications", auth, async (req, res) => {
         date: row.date,
         time: row.time,
         place: row.place,
+      })),
+      deletionWarnings: deletionWarnings.map((row) => ({
+        id: `delete-warning:${row.roomId}:${row.deletesAt}`,
+        type: "deletion",
+        roomId: row.roomId,
+        title: row.title || "약속 게시글",
+        date: row.date,
+        deletesAt: row.deletesAt,
+        message: `'${row.title || "약속 게시글"}' 게시글의 약속 날짜가 지났습니다. 30분 뒤 채팅방과 채팅 기록, 파일이 삭제됩니다.`,
       })),
     });
   } catch (err) {

@@ -10,6 +10,7 @@ import postRoutes from "./routes/post.js";
 import reportRoutes from "./routes/report.js";
 import userRoutes from "./routes/user.js";
 import { registerChatSocket } from "./socket/chat.socket.js";
+import { startAppointmentReminderJob } from "./workers/appointmentReminders.js";
 import { startPostDeletionJob } from "./workers/deleteExpiredPosts.js";
 
 import path from "path";
@@ -29,6 +30,8 @@ const io = new Server(server, {
   },
 });
 
+app.set("io", io);
+
 app.use(cors({ origin: env.clientOrigins }));
 app.use(express.json());
 
@@ -40,6 +43,7 @@ app.use("/chat", chatRoutes);
 
 registerChatSocket(io);
 
+startAppointmentReminderJob(io);
 startPostDeletionJob(io);
 
 server.listen(env.port, () => {

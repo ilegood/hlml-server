@@ -118,8 +118,16 @@ const mapPostRow = (
     }
   });
 
+  const participantCount = 1 + joinedBy.length;
+  const capacity = Number(post.capacity) || 2;
+  const status =
+    post.status === STATUS_OPEN && participantCount >= capacity
+      ? STATUS_CLOSED
+      : post.status;
+
   return {
     ...post,
+    status,
     authorDetails,
     participantDetails: participants,
     likes: likes.length,
@@ -127,7 +135,7 @@ const mapPostRow = (
     joinedBy,
     joinedByNicknames,
     joinedUserIds,
-    participants: 1 + joinedBy.length,
+    participants: participantCount,
     comments: topLevel,
   };
 };
@@ -306,10 +314,13 @@ export const updatePost = async (id, userId, data) => {
     throw error;
   }
 
+  const nextStatus =
+    currentParticipants >= nextCapacity ? STATUS_CLOSED : data.status;
+
   const [result] = await pool.query(
     `UPDATE posts SET
      title=?, content=?, date=?, time=?, place=?, latitude=?, longitude=?,
-     capacity=?, status=?, categories=?, image=?, edited=1
+     capacity=?, participants=?, status=?, categories=?, image=?, edited=1
      WHERE post_id=? AND user_id=?`,
     [
       data.title,
@@ -319,8 +330,9 @@ export const updatePost = async (id, userId, data) => {
       data.place,
       data.latitude,
       data.longitude,
-      data.capacity,
-      data.status,
+      nextCapacity,
+      currentParticipants,
+      nextStatus,
       data.categories,
       data.image,
       id,
