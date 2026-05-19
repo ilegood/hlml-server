@@ -98,7 +98,7 @@ export const joinPost = async (req, res) => {
       io.to(roomStr).emit("receive_message", data.systemMessage);
 
       // Send entrance alarm to all participants
-      if (data.systemMessage.content.includes("입장하셨습니다")) {
+      if (data.systemMessage.content.includes("들어왔습니다")) {
         const members = [
           data.post.user_id,
           ...(data.post.joinedUserIds || []),

@@ -144,7 +144,7 @@ const emitToPostMembers = async (connection, io, post, eventName, payload) => {
 };
 
 const buildWarningMessage = (title) =>
-  `'${title}' 게시글의 약속 날짜가 지났습니다. 30분 뒤 채팅방과 채팅 기록, 파일이 삭제됩니다.`;
+  `'${title}' 게시글의 약속 날짜가 지났습니다. 30분 뒤 게시판에서 만료 처리되지만, 참여 중인 채팅방은 계속 유지됩니다.`;
 
 const sendDeletionWarnings = async (io) => {
   const warningStart = getSeoulDateTimeString(30);
@@ -202,8 +202,6 @@ const sendDeletionWarnings = async (io) => {
 const deleteExpiredPosts = async (io) => {
   const now = getSeoulDateTimeString();
   let connection;
-  let cloudinaryAssets = [];
-  let deletedPosts = [];
 
   try {
     connection = await pool.getConnection();
@@ -213,6 +211,7 @@ const deleteExpiredPosts = async (io) => {
       `SELECT post_id, title
        FROM posts
        WHERE date IS NOT NULL
+         AND is_deleted = 0
          AND ${expirationDeadlineSql} <= ?`,
       [now],
     );
@@ -223,35 +222,35 @@ const deleteExpiredPosts = async (io) => {
     }
 
     const postIds = expiredPosts.map((post) => post.post_id);
-    const roomIds = postIds.map(String);
-    cloudinaryAssets = await collectCloudinaryAssets(connection, postIds);
-    deletedPosts = await Promise.all(
-      expiredPosts.map(async (post) => ({
-        roomId: String(post.post_id),
-        title: post.title || "약속 게시글",
-        memberIds: await getPostMemberIds(connection, post.post_id),
-      })),
-    );
 
-    await connection.query("DELETE FROM messages WHERE room_id IN (?)", [roomIds]);
-    await connection.query("DELETE FROM posts WHERE post_id IN (?)", [postIds]);
+    // Update is_deleted = 1 instead of physical deletion
+    await connection.query(
+      "UPDATE posts SET is_deleted = 1 WHERE post_id IN (?)",
+      [postIds],
+    );
 
     await connection.commit();
 
-    deletedPosts.forEach(({ memberIds, ...post }) => {
-      io.to(post.roomId).emit("chat_room_deleted", post);
+    for (const post of expiredPosts) {
+      const roomId = String(post.post_id);
+      const memberIds = await getPostMemberIds(connection, post.post_id);
+      
+      const expiredPayload = {
+        roomId,
+        title: post.title || "약속 게시글",
+        message: "약속 시간이 지나 게시판에서 만료되었습니다. 채팅방은 유지됩니다.",
+      };
+
+      io.to(roomId).emit("chat_room_expired", expiredPayload);
       memberIds.forEach((memberId) => {
-        io.to(`user_${memberId}`).emit("chat_room_deleted", post);
+        io.to(`user_${memberId}`).emit("chat_room_expired", expiredPayload);
       });
-      io.in(post.roomId).socketsLeave(post.roomId);
-    });
+    }
 
-    await deleteCloudinaryAssets(cloudinaryAssets);
-
-    console.log(`Deleted ${expiredPosts.length} expired post(s) before ${now}.`);
+    console.log(`Expired ${expiredPosts.length} post(s) before ${now}.`);
   } catch (error) {
     if (connection) await connection.rollback();
-    console.error("Error deleting expired posts:", error);
+    console.error("Error expiring posts:", error);
   } finally {
     if (connection) connection.release();
   }
