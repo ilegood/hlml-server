@@ -28,12 +28,14 @@ const optionalAuth = (req, _res, next) => {
 
 // routes
 router.get("/", optionalAuth, postController.getPosts);
+router.get("/my-rooms", auth, postController.getMyChatRooms);
 router.get("/kicked", auth, postController.getKickedPosts);
 router.get("/:id", optionalAuth, postController.getPost);
 
 router.post("/", auth, upload.single("image"), postController.createPost);
 router.patch("/:id", auth, upload.single("image"), postController.updatePost);
 router.delete("/:id", auth, postController.deletePost);
+router.post("/:id/hide", auth, postController.hidePost);
 
 // like / join
 router.post("/:id/like", auth, postController.likePost);

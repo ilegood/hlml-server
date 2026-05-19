@@ -16,9 +16,9 @@ const router = express.Router();
 router.post("/register", registerUser);
 router.post("/login", loginUser);
 router.get("/profile", auth, getProfile);
+router.get("/search", auth, searchUsersController);
 router.get("/:id", auth, getUserPublicProfile);
 router.patch("/profile", auth, upload.single("profile_img"), updateProfile);
-router.get("/search", auth, searchUsersController);
 router.delete("/", auth, deleteUserController);
 
 export default router;

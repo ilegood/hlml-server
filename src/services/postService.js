@@ -55,6 +55,7 @@ const normalizePostData = (body) => ({
 });
 
 export const getPosts = (viewerId) => repo.getPosts(viewerId);
+export const getMyChatRooms = (userId) => repo.getMyChatRooms(userId);
 export const getPost = (id, viewerId) => repo.getPostWithDetails(id, viewerId);
 
 export const createPost = async (req) => {
@@ -92,6 +93,8 @@ export const updatePost = async (req) => {
 };
 
 export const deletePost = (id, userId) => repo.deletePost(id, userId);
+
+export const hidePost = (id, userId) => repo.hidePost(id, userId);
 
 export const likePost = (userId, postId) => repo.toggleLikePost(userId, postId);
 

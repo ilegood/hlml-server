@@ -34,6 +34,8 @@ app.use("/reports", reportRoutes);
 app.use("/users", userRoutes);
 app.use("/chat", chatRoutes);
 
+app.set("io", io);
+
 registerChatSocket(io);
 
 server.listen(env.port, () => {

@@ -10,6 +10,16 @@ export const getPosts = async (req, res) => {
   }
 };
 
+export const getMyChatRooms = async (req, res) => {
+  try {
+    const data = await postService.getMyChatRooms(req.userId);
+    res.json(data);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ message: `server error: ${e.message}` });
+  }
+};
+
 export const getPost = async (req, res) => {
   try {
     const data = await postService.getPost(req.params.id, req.userId);
@@ -53,6 +63,17 @@ export const deletePost = async (req, res) => {
   }
 };
 
+export const hidePost = async (req, res) => {
+  try {
+    const affectedRows = await postService.hidePost(req.params.id, req.userId);
+    if (!affectedRows) return res.status(404).json({ message: "not found or unauthorized" });
+    res.json({ success: true });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ message: "hide error" });
+  }
+};
+
 export const likePost = async (req, res) => {
   try {
     const data = await postService.likePost(req.userId, req.params.id);
@@ -67,7 +88,31 @@ export const joinPost = async (req, res) => {
   try {
     const data = await postService.joinPost(req.userId, req.params.id);
     if (!data) return res.status(404).json({ message: "not found" });
-    res.json(data);
+
+    const io = req.app.get("io");
+    if (io && data.systemMessage) {
+      const roomStr = String(req.params.id);
+      io.to(roomStr).emit("receive_message", data.systemMessage);
+
+      // Send entrance alarm to all participants
+      if (data.systemMessage.content.includes("입장하셨습니다")) {
+        const members = [
+          data.post.user_id,
+          ...(data.post.joinedUserIds || []),
+        ];
+        members.forEach((memberId) => {
+          if (String(memberId) !== String(req.userId)) {
+            io.to(`user_${memberId}`).emit("entrance_alarm", {
+              roomId: roomStr,
+              roomTitle: data.post.title,
+              message: data.systemMessage.content,
+            });
+          }
+        });
+      }
+    }
+
+    res.json(data.post);
   } catch (e) {
     console.error(e);
     res.status(e.status || 500).json({ message: "join error" });
@@ -78,7 +123,13 @@ export const leavePost = async (req, res) => {
   try {
     const data = await postService.leavePost(req.userId, req.params.id);
     if (!data) return res.status(404).json({ message: "not found" });
-    res.json(data);
+
+    const io = req.app.get("io");
+    if (io && data.systemMessage) {
+      io.to(String(req.params.id)).emit("receive_message", data.systemMessage);
+    }
+
+    res.json(data.post);
   } catch (e) {
     console.error(e);
     res.status(500).json({ message: "leave error" });
