@@ -8,9 +8,12 @@ const deleteExpiredPosts = async () => {
     connection = await pool.getConnection();
     await connection.beginTransaction();
 
-    const yesterday = new Date();
+    const seoulNow = new Date(new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Seoul" }).format(new Date()));
+    const yesterday = new Date(seoulNow);
     yesterday.setDate(yesterday.getDate() - 1);
-    const expiredDate = yesterday.toISOString().split('T')[0];
+    const expiredDate = yesterday.getFullYear() + '-' + 
+                        String(yesterday.getMonth() + 1).padStart(2, '0') + '-' + 
+                        String(yesterday.getDate()).padStart(2, '0');
 
     const [expiredPosts] = await connection.query(
       "SELECT post_id FROM posts WHERE date = ?",
@@ -45,9 +48,12 @@ const deleteExpiredPosts = async () => {
 const sendDeletionWarnings = async (io) => {
   console.log("Running scheduled job: Sending deletion warnings...");
   try {
-    const yesterday = new Date();
+    const seoulNow = new Date(new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Seoul" }).format(new Date()));
+    const yesterday = new Date(seoulNow);
     yesterday.setDate(yesterday.getDate() - 1);
-    const expiredDate = yesterday.toISOString().split('T')[0];
+    const expiredDate = yesterday.getFullYear() + '-' + 
+                        String(yesterday.getMonth() + 1).padStart(2, '0') + '-' + 
+                        String(yesterday.getDate()).padStart(2, '0');
 
     const [expiredPosts] = await pool.query("SELECT post_id, title FROM posts WHERE date = ?", [expiredDate]);
     

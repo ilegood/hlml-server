@@ -12,7 +12,15 @@ import userRoutes from "./routes/user.js";
 import { registerChatSocket } from "./socket/chat.socket.js";
 import { startPostDeletionJob } from "./workers/deleteExpiredPosts.js";
 
+import path from "path";
+import { fileURLToPath } from "url";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
 const app = express();
+
+app.use("/uploads", express.static(path.join(__dirname, "../../uploads")));
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
