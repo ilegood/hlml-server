@@ -21,6 +21,8 @@ const io = new Server(server, {
   },
 });
 
+app.set("io", io);
+
 app.use(cors({ origin: env.clientOrigins }));
 app.use(express.json());
 
