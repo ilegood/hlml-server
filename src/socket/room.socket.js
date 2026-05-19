@@ -1,9 +1,11 @@
 import { query } from "../db.js";
+import { toUtcIsoString } from "../utils/time.js";
 import { parseJsonArray, toInt } from "./utils.js";
 
 const formatMessageRows = (rows) =>
   rows.map((row) => ({
     ...row,
+    created_at: toUtcIsoString(row.created_at),
     nickname: row.is_system
       ? row.nickname
       : row.latestNickname || row.nickname,
@@ -32,6 +34,7 @@ export const registerRoomSocket = (io, socket) => {
   };
 
   socket.on("join_room", async ({ roomId, nickname, userId }) => {
+    console.log("Received join_room event for roomId:", roomId, "by user:", userId);
     const userIdInt = toInt(userId);
     if (!roomId) return;
 
@@ -152,8 +155,10 @@ export const registerRoomSocket = (io, socket) => {
          LIMIT 50`,
         [roomStr],
       );
+      
+      const formattedMessages = formatMessageRows(rows);
 
-      socket.emit("load_messages", formatMessageRows(rows));
+      socket.emit("load_messages", formattedMessages);
     } catch (error) {
       console.error("Failed to load room messages:", error);
     }

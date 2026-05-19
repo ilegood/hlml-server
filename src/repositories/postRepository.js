@@ -232,7 +232,6 @@ export const getPosts = async (viewerId = null) => {
         LEFT JOIN users u ON c.user_id = u.user_id
         GROUP BY c.post_id
       ) ca ON p.post_id = ca.post_id
-     WHERE p.is_deleted = 0
      ORDER BY p.created_at DESC`,
   );
 
@@ -251,54 +250,6 @@ export const getPosts = async (viewerId = null) => {
         parseJsonArray(likesJson),
         parseJsonArray(participantsJson),
         parseJsonArray(commentsJson),
-        null,
-        blockedUserIds,
-      );
-    });
-};
-
-export const getMyChatRooms = async (userId) => {
-  const blockedUserIds = await getBlockedUserIds(userId);
-  const [rows] = await pool.query(
-    `SELECT
-       p.*,
-       u.nickname AS author,
-       u.nickname AS authorNickname,
-       COALESCE(la.likes, JSON_ARRAY()) AS likes_json,
-       COALESCE(pa.participants, JSON_ARRAY()) AS participants_json,
-       COALESCE(ca.comments, JSON_ARRAY()) AS comments_json
-     FROM posts p
-     JOIN users u ON p.user_id = u.user_id
-     LEFT JOIN (
-        SELECT pl.post_id, JSON_ARRAYAGG(JSON_OBJECT('user_id', u.user_id, 'nickname', u.nickname)) AS likes
-        FROM post_likes pl JOIN users u ON pl.user_id = u.user_id GROUP BY pl.post_id
-      ) la ON p.post_id = la.post_id
-     LEFT JOIN (
-        SELECT pp2.post_id, JSON_ARRAYAGG(JSON_OBJECT('user_id', u.user_id, 'nickname', u.nickname)) AS participants
-        FROM post_participants pp2 JOIN users u ON pp2.user_id = u.user_id GROUP BY pp2.post_id
-      ) pa ON p.post_id = pa.post_id
-     LEFT JOIN (
-        SELECT c.post_id, JSON_ARRAYAGG(JSON_OBJECT('id', c.id, 'post_id', c.post_id, 'user_id', c.user_id, 'content', c.content, 'parent_id', c.parent_id, 'created_at', c.created_at, 'edited', c.edited, 'nickname', u.nickname)) AS comments
-        FROM comments c LEFT JOIN users u ON c.user_id = u.user_id GROUP BY c.post_id
-      ) ca ON p.post_id = ca.post_id
-     WHERE (p.user_id = ? AND p.is_author_hidden = 0)
-        OR EXISTS (
-          SELECT 1 FROM post_participants pp 
-          WHERE pp.post_id = p.post_id AND pp.user_id = ? AND pp.is_hidden = 0
-        )
-     ORDER BY p.created_at DESC`,
-    [userId, userId],
-  );
-
-  return rows
-    .filter((row) => !blockedUserIds.has(Number(row.user_id)))
-    .map((row) => {
-      const { likes_json, participants_json, comments_json, ...post } = row;
-      return mapPostRow(
-        post,
-        parseJsonArray(likes_json),
-        parseJsonArray(participants_json),
-        parseJsonArray(comments_json),
         null,
         blockedUserIds,
       );
@@ -381,26 +332,49 @@ export const updatePost = async (id, userId, data) => {
 
 export const deletePost = async (id, userId) => {
   const [result] = await pool.query(
-    "UPDATE posts SET is_deleted = 1 WHERE post_id=? AND user_id=?",
+    "DELETE FROM posts WHERE post_id=? AND user_id=?",
     [id, userId],
   );
   return result.affectedRows;
 };
 
-export const hidePost = async (id, userId) => {
-  // Check if author
-  const [[post]] = await pool.query("SELECT user_id FROM posts WHERE post_id = ?", [id]);
-  if (post && post.user_id === userId) {
-    await pool.query("UPDATE posts SET is_author_hidden = 1 WHERE post_id = ?", [id]);
-    return true;
-  }
-  
-  // Check if participant
-  const [result] = await pool.query(
-    "UPDATE post_participants SET is_hidden = 1 WHERE post_id = ? AND user_id = ?",
-    [id, userId],
+export const getJoinedPostsForUser = async (userId, connection) => {
+  const [joinedPosts] = await connection.query(
+    `SELECT pp.post_id
+     FROM post_participants pp
+     JOIN posts p ON pp.post_id = p.post_id
+     WHERE pp.user_id = ? AND p.user_id != ?`,
+    [userId, userId],
   );
-  return result.affectedRows > 0;
+  return joinedPosts;
+};
+
+export const getPostCapacity = async (postId, connection) => {
+  const [[postRow]] = await connection.query(
+    "SELECT capacity FROM posts WHERE post_id = ?",
+    [postId],
+  );
+  return postRow;
+};
+
+export const countPostParticipants = async (postId, connection) => {
+  const [[participantCount]] = await connection.query(
+    "SELECT COUNT(*) AS count FROM post_participants WHERE post_id = ?",
+    [postId],
+  );
+  return participantCount.count;
+};
+
+export const updatePostParticipantsAndStatus = async (
+  postId,
+  currentParticipants,
+  status,
+  connection,
+) => {
+  await connection.query(
+    "UPDATE posts SET participants = ?, status = ? WHERE post_id = ?",
+    [currentParticipants, status, postId],
+  );
 };
 
 export const toggleLikePost = async (userId, postId) => {
@@ -433,40 +407,18 @@ export const toggleJoinPost = async (userId, postId) => {
   const post = await getPost(postId);
   if (!post) return null;
   if (String(post.user_id) === String(userId)) {
-    return { post: await getPostWithDetails(postId, userId) };
+    return getPostWithDetails(postId, userId);
   }
-
-  const [[user]] = await pool.query(
-    "SELECT nickname FROM users WHERE user_id = ?",
-    [userId],
-  );
 
   const [[existing]] = await pool.query(
     "SELECT id FROM post_participants WHERE user_id=? AND post_id=?",
     [userId, postId],
   );
 
-  let systemMessage = null;
-
   if (existing) {
     const wasFull = (post.participants || 1) >= (post.capacity || 2);
     await pool.query("DELETE FROM post_participants WHERE id=?", [existing.id]);
     await syncPostParticipantState(postId, post.capacity, post.status, wasFull);
-
-    const leaveMsgContent = `${user.nickname}님이 퇴장하셨습니다.`;
-    const [msgResult] = await pool.query(
-      "INSERT INTO messages (room_id, user_id, nickname, content, is_system) VALUES (?, ?, ?, ?, ?)",
-      [postId, userId, "System", leaveMsgContent, 1],
-    );
-    systemMessage = {
-      id: msgResult.insertId,
-      roomId: String(postId),
-      userId,
-      nickname: "System",
-      content: leaveMsgContent,
-      isSystem: true,
-      created_at: new Date().toISOString(),
-    };
   } else {
     if (post.status === STATUS_CLOSED) {
       const error = new Error("recruitment is closed");
@@ -502,34 +454,9 @@ export const toggleJoinPost = async (userId, postId) => {
       [userId, postId],
     );
     await syncPostParticipantState(postId, post.capacity, post.status, false);
-
-    const joinMsgContent = `${user.nickname}님이 들어왔습니다.`;
-    const [[alreadyJoined]] = await pool.query(
-      "SELECT id FROM messages WHERE room_id = ? AND user_id = ? AND is_system = 1 AND content = ?",
-      [String(postId), userId, joinMsgContent],
-    );
-
-    if (!alreadyJoined) {
-      const [msgResult] = await pool.query(
-        "INSERT INTO messages (room_id, user_id, nickname, content, is_system) VALUES (?, ?, ?, ?, ?)",
-        [postId, userId, "System", joinMsgContent, 1],
-      );
-      systemMessage = {
-        id: msgResult.insertId,
-        roomId: String(postId),
-        userId,
-        nickname: "System",
-        content: joinMsgContent,
-        isSystem: true,
-        created_at: new Date().toISOString(),
-      };
-    }
   }
 
-  return {
-    post: await getPostWithDetails(postId),
-    systemMessage,
-  };
+  return getPostWithDetails(postId);
 };
 
 export const leavePost = async (userId, postId) => {
@@ -578,26 +505,13 @@ export const leavePost = async (userId, postId) => {
   const wasFull = (post.participants || 1) >= (post.capacity || 2);
   await syncPostParticipantState(postId, post.capacity, post.status, wasFull);
 
-  const leaveMsgContent = `${user.nickname}님이 퇴장하셨습니다.`;
-  const [msgResult] = await pool.query(
+  const leaveMsgContent = `${user.nickname}\ub2d8\uc774 \ud1f4\uc7a5\ud558\uc168\uc2b5\ub2c8\ub2e4.`;
+  await pool.query(
     "INSERT INTO messages (room_id, user_id, nickname, content, is_system) VALUES (?, ?, ?, ?, ?)",
     [postId, userId, "System", leaveMsgContent, 1],
   );
 
-  const systemMessage = {
-    id: msgResult.insertId,
-    roomId: String(postId),
-    userId,
-    nickname: "System",
-    content: leaveMsgContent,
-    isSystem: true,
-    created_at: new Date().toISOString(),
-  };
-
-  return {
-    post: await getPostWithDetails(postId),
-    systemMessage,
-  };
+  return getPostWithDetails(postId);
 };
 
 // comments
@@ -666,8 +580,7 @@ export const getKickedPostsForUser = async (userId) => {
      WHERE pb.user_id = ? AND pb.is_hidden = 0`,
     [userId],
   );
-  const results = await Promise.all(rows.map((row) => getPostWithDetails(row.post_id)));
-  return results.filter(Boolean);
+  return Promise.all(rows.map((row) => getPostWithDetails(row.post_id)));
 };
 
 export const deletePostBan = async (userId, postId) => {

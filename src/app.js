@@ -1,8 +1,6 @@
 import cors from "cors";
 import express from "express";
 import http from "http";
-import path from "path";
-import { fileURLToPath } from "url";
 import { Server } from "socket.io";
 
 import { env } from "./config/env.js";
@@ -12,6 +10,7 @@ import postRoutes from "./routes/post.js";
 import reportRoutes from "./routes/report.js";
 import userRoutes from "./routes/user.js";
 import { registerChatSocket } from "./socket/chat.socket.js";
+import { startPostDeletionJob } from "./workers/deleteExpiredPosts.js";
 
 const app = express();
 const server = http.createServer(app);
@@ -22,11 +21,10 @@ const io = new Server(server, {
   },
 });
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
+app.set("io", io);
 
 app.use(cors({ origin: env.clientOrigins }));
 app.use(express.json());
-app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
 app.use("/friends", friendsRoutes);
 app.use("/posts", postRoutes);
@@ -37,6 +35,8 @@ app.use("/chat", chatRoutes);
 app.set("io", io);
 
 registerChatSocket(io);
+
+startPostDeletionJob(io);
 
 server.listen(env.port, () => {
   console.log(`Server running on ${env.port}`);
