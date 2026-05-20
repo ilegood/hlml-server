@@ -2,7 +2,8 @@ import * as postService from "../services/postService.js";
 
 export const getPosts = async (req, res) => {
   try {
-    const data = await postService.getPosts(req.userId);
+    const visibleOnly = String(req.query.visibleOnly || "") === "1";
+    const data = await postService.getPosts(req.userId, { visibleOnly });
     res.json(data);
   } catch (e) {
     console.error(e);

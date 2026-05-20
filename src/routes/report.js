@@ -24,13 +24,34 @@ const ensureReportColumns = async (connection) => {
       INDEX idx_reports_target_id (target_id)
     )`,
   );
+
+  await connection.query(
+    "ALTER TABLE reports ADD COLUMN IF NOT EXISTS report_type VARCHAR(20) NOT NULL DEFAULT 'user'",
+  );
+  await connection.query(
+    "ALTER TABLE reports ADD COLUMN IF NOT EXISTS target_post_id INT NULL",
+  );
+  await connection.query(
+    "ALTER TABLE reports ADD COLUMN IF NOT EXISTS target_comment_id INT NULL",
+  );
+  await connection.query(
+    "ALTER TABLE reports ADD COLUMN IF NOT EXISTS target_title VARCHAR(255) NULL",
+  );
+  await connection.query(
+    "ALTER TABLE reports ADD COLUMN IF NOT EXISTS target_excerpt TEXT NULL",
+  );
 };
 
 const mapReportRow = (row) => ({
   id: row.id,
+  reportType: row.report_type,
   targetUserId: row.target_id,
   targetName: row.target_name,
   targetProfileImg: row.target_profile_img,
+  targetPostId: row.target_post_id,
+  targetCommentId: row.target_comment_id,
+  targetTitle: row.target_title,
+  targetExcerpt: row.target_excerpt,
   reason: row.reason,
   content: row.content,
   status: row.status,
@@ -50,6 +71,11 @@ router.get("/my", auth, async (req, res) => {
          r.target_id,
          u.nickname AS target_name,
          u.profile_img AS target_profile_img,
+         r.report_type,
+         r.target_post_id,
+         r.target_comment_id,
+         r.target_title,
+         r.target_excerpt,
          r.reason,
          r.content,
          r.status,
@@ -73,7 +99,15 @@ router.get("/my", auth, async (req, res) => {
 
 router.post("/", auth, async (req, res) => {
   const reporterId = req.userId;
-  const { targetUserId, reason, content } = req.body;
+  const {
+    targetUserId,
+    targetPostId,
+    targetCommentId,
+    targetTitle,
+    targetContent,
+    reason,
+    content,
+  } = req.body;
   const connection = await pool.getConnection();
 
   try {
@@ -88,6 +122,15 @@ router.post("/", auth, async (req, res) => {
     await connection.beginTransaction();
     await ensureReportColumns(connection);
 
+    const reportType = targetCommentId
+      ? "comment"
+      : targetPostId
+        ? "post"
+        : "user";
+    const normalizedTargetTitle = String(targetTitle || "").trim().slice(0, 255) || null;
+    const normalizedTargetExcerpt =
+      String(targetContent || "").trim().slice(0, 500) || null;
+
     const [[target]] = await connection.query(
       "SELECT user_id, nickname, profile_img, report_count FROM users WHERE user_id = ? AND is_deleted = FALSE",
       [targetUserId],
@@ -99,8 +142,29 @@ router.post("/", auth, async (req, res) => {
     }
 
     const [result] = await connection.query(
-      "INSERT INTO reports (reporter_id, target_id, reason, content, status) VALUES (?, ?, ?, ?, 'pending')",
-      [reporterId, targetUserId, reason, String(content).trim()],
+      `INSERT INTO reports (
+        reporter_id,
+        target_id,
+        report_type,
+        target_post_id,
+        target_comment_id,
+        target_title,
+        target_excerpt,
+        reason,
+        content,
+        status
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')`,
+      [
+        reporterId,
+        targetUserId,
+        reportType,
+        targetPostId || null,
+        targetCommentId || null,
+        normalizedTargetTitle,
+        normalizedTargetExcerpt,
+        reason,
+        String(content).trim(),
+      ],
     );
 
     await connection.query(
@@ -117,9 +181,14 @@ router.post("/", auth, async (req, res) => {
 
     res.status(201).json({
       id: result.insertId,
+      reportType,
       targetUserId: target.user_id,
       targetName: target.nickname,
       targetProfileImg: target.profile_img,
+      targetPostId: targetPostId || null,
+      targetCommentId: targetCommentId || null,
+      targetTitle: normalizedTargetTitle,
+      targetExcerpt: normalizedTargetExcerpt,
       reason,
       content: String(content).trim(),
       status: "pending",

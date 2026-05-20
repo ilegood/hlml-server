@@ -92,7 +92,7 @@ const normalizePostData = (body) => {
   };
 };
 
-export const getPosts = (viewerId) => repo.getPosts(viewerId);
+export const getPosts = (viewerId, options) => repo.getPosts(viewerId, options);
 export const getPost = (id, viewerId) => repo.getPostWithDetails(id, viewerId);
 
 export const createPost = async (req) => {

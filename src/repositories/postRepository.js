@@ -2,6 +2,7 @@ import pool from "../db.js";
 
 const STATUS_OPEN = "\ubaa8\uc9d1\uc911";
 const STATUS_CLOSED = "\ubaa8\uc9d1\uc644\ub8cc";
+const TIMEZONE = "Asia/Seoul";
 
 const parseJsonArray = (value) => {
   if (!value) return [];
@@ -20,6 +21,22 @@ const parseJsonArray = (value) => {
 const toTimestamp = (value) => {
   const timestamp = new Date(value).getTime();
   return Number.isNaN(timestamp) ? 0 : timestamp;
+};
+
+const getSeoulDateTimeString = () => {
+  const now = new Date();
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: TIMEZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  }).formatToParts(now);
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${values.year}-${values.month}-${values.day} ${values.hour}:${values.minute}:${values.second}`;
 };
 
 
@@ -186,10 +203,19 @@ export const getPostWithDetails = async (id, viewerId = null) => {
   );
 };
 
-export const getPosts = async (viewerId = null) => {
+export const getPosts = async (viewerId = null, { visibleOnly = false } = {}) => {
   const blockedUserIds = await getBlockedUserIds(viewerId);
   const authorJoin = "JOIN users u ON p.user_id = u.user_id";
   const postSelect = "p.*";
+  const whereClauses = [];
+  const params = [];
+
+  if (visibleOnly) {
+    whereClauses.push(
+      `(p.status <> ? AND (p.date IS NULL OR p.time IS NULL OR TIMESTAMP(p.date, p.time) > ?))`,
+    );
+    params.push(STATUS_CLOSED, getSeoulDateTimeString());
+  }
 
   const [rows] = await pool.query(
     `SELECT
@@ -240,7 +266,9 @@ export const getPosts = async (viewerId = null) => {
         LEFT JOIN users u ON c.user_id = u.user_id
         GROUP BY c.post_id
       ) ca ON p.post_id = ca.post_id
+     ${whereClauses.length > 0 ? `WHERE ${whereClauses.join(" AND ")}` : ""}
      ORDER BY p.created_at DESC`,
+    params,
   );
 
   return rows

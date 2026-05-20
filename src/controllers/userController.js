@@ -183,7 +183,7 @@ export const getMyStats = async (req, res) => {
     const [[reportStats]] = await connection.query(
       `SELECT COUNT(*) AS reports
        FROM reports
-       WHERE reporter_id = ?
+       WHERE target_id = ?
          AND created_at >= DATE_SUB(NOW(), INTERVAL 24 HOUR)`,
       [userId],
     );

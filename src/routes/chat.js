@@ -1,5 +1,7 @@
 import express from "express";
 import multer from "multer";
+import dns from "dns/promises";
+import net from "net";
 import pool, { query } from "../db.js";
 import auth from "../middleware/auth.js";
 import { cloudinary } from "../middleware/cloudinary.js";
@@ -70,6 +72,418 @@ const getDownloadProxyUrl = ({ url, filename }) =>
     filename || "download",
   )}`;
 
+const LINK_PREVIEW_TIMEOUT_MS = 3500;
+const LINK_PREVIEW_MAX_BYTES = 300000;
+const LINK_PREVIEW_MAX_REDIRECTS = 4;
+const LINK_PREVIEW_SUCCESS_TTL_MS = 1000 * 60 * 30;
+const LINK_PREVIEW_FAILURE_TTL_MS = 1000 * 60 * 3;
+const linkPreviewCache = new Map();
+
+const LINK_PREVIEW_ALLOWED_HOSTS = [
+  "naver.me",
+  "map.naver.com",
+  "map.kakao.com",
+  "place.map.kakao.com",
+  "m.map.kakao.com",
+  "maps.google.com",
+  "google.com",
+  "google.co.kr",
+  "maps.app.goo.gl",
+  "goo.gl",
+  "blog.naver.com",
+  "m.blog.naver.com",
+  "cafe.naver.com",
+  "m.cafe.naver.com",
+  "youtube.com",
+  "youtube-nocookie.com",
+  "youtu.be",
+];
+
+const isAllowedPreviewHost = (hostname) =>
+  LINK_PREVIEW_ALLOWED_HOSTS.some(
+    (allowed) => hostname === allowed || hostname.endsWith(`.${allowed}`),
+  );
+
+const isAllowedPreviewUrl = (url) => {
+  const hostname = url.hostname.toLowerCase();
+  const path = url.pathname;
+  if (!isAllowedPreviewHost(hostname)) return false;
+  if (hostname === "goo.gl") return path.startsWith("/maps");
+  if (hostname === "google.com" || hostname.endsWith(".google.com")) {
+    return path.startsWith("/maps") || hostname === "maps.google.com";
+  }
+  if (hostname === "google.co.kr" || hostname.endsWith(".google.co.kr")) {
+    return path.startsWith("/maps") || hostname === "maps.google.co.kr";
+  }
+  return true;
+};
+
+const isPrivateIp = (address) => {
+  const version = net.isIP(address);
+  if (version === 4) {
+    const parts = address.split(".").map((part) => Number(part));
+    const [a, b] = parts;
+    return (
+      a === 0 ||
+      a === 10 ||
+      a === 127 ||
+      (a === 169 && b === 254) ||
+      (a === 172 && b >= 16 && b <= 31) ||
+      (a === 192 && b === 168)
+    );
+  }
+
+  if (version === 6) {
+    const normalized = address.toLowerCase();
+    return (
+      normalized === "::1" ||
+      normalized === "::" ||
+      normalized.startsWith("fc") ||
+      normalized.startsWith("fd") ||
+      normalized.startsWith("fe80:")
+    );
+  }
+
+  return true;
+};
+
+const assertPreviewUrlAllowed = async (url) => {
+  if (!["http:", "https:"].includes(url.protocol)) {
+    const error = new Error("invalid preview url");
+    error.status = 400;
+    throw error;
+  }
+
+  const hostname = url.hostname.toLowerCase();
+  if (hostname === "localhost" || hostname.endsWith(".localhost") || !isAllowedPreviewUrl(url)) {
+    const error = new Error("preview host not allowed");
+    error.status = 400;
+    throw error;
+  }
+
+  if (net.isIP(hostname)) {
+    if (isPrivateIp(hostname)) {
+      const error = new Error("preview host not allowed");
+      error.status = 400;
+      throw error;
+    }
+    return;
+  }
+
+  const addresses = await dns.lookup(hostname, { all: true, verbatim: true });
+  if (
+    addresses.length === 0 ||
+    addresses.some((entry) => isPrivateIp(entry.address))
+  ) {
+    const error = new Error("preview host not allowed");
+    error.status = 400;
+    throw error;
+  }
+};
+
+const normalizePreviewUrl = (value) => {
+  const parsed = new URL(
+    String(value || "").trim().startsWith("http")
+      ? String(value || "").trim()
+      : `https://${String(value || "").trim()}`,
+  );
+  parsed.hash = "";
+  parsed.hostname = parsed.hostname.toLowerCase();
+  ["utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content", "fbclid", "gclid"].forEach(
+    (key) => parsed.searchParams.delete(key),
+  );
+  if (parsed.pathname !== "/" && parsed.pathname.endsWith("/")) {
+    parsed.pathname = parsed.pathname.replace(/\/+$/, "");
+  }
+  return parsed;
+};
+
+const decodeHtmlEntities = (value = "") =>
+  String(value)
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&#x27;/g, "'")
+    .replace(/\s+/g, " ")
+    .trim();
+
+const getMetaContent = (html, property) => {
+  const escaped = property.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const patterns = [
+    new RegExp(
+      `<meta[^>]+(?:property|name)=["']${escaped}["'][^>]+content=["']([^"']*)["'][^>]*>`,
+      "i",
+    ),
+    new RegExp(
+      `<meta[^>]+content=["']([^"']*)["'][^>]+(?:property|name)=["']${escaped}["'][^>]*>`,
+      "i",
+    ),
+  ];
+
+  for (const pattern of patterns) {
+    const match = html.match(pattern);
+    if (match?.[1]) return decodeHtmlEntities(match[1]);
+  }
+
+  return "";
+};
+
+const getHtmlTitle = (html) => {
+  const match = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+  return match?.[1] ? decodeHtmlEntities(match[1]) : "";
+};
+
+const getFaviconUrl = (html, baseUrl) => {
+  const match = html.match(
+    /<link[^>]+rel=["'][^"']*(?:icon|shortcut icon|apple-touch-icon)[^"']*["'][^>]+href=["']([^"']+)["'][^>]*>/i,
+  );
+  if (!match?.[1]) return "";
+
+  try {
+    return new URL(decodeHtmlEntities(match[1]), baseUrl).toString();
+  } catch {
+    return "";
+  }
+};
+
+const getDefaultPreviewTitle = (url) => {
+  const hostname = url.hostname.toLowerCase();
+  if (hostname.includes("youtube") || hostname === "youtu.be") return "YouTube video";
+  if (hostname === "search.naver.com") return "네이버 검색";
+  if (hostname === "naver.me" || hostname.includes("map.naver")) return "네이버 지도";
+  if (hostname.includes("map.kakao") || hostname.includes("kakao")) return "카카오맵";
+  if (hostname.includes("google")) return "Google Maps";
+  if (hostname.includes("blog.naver")) return "네이버 블로그";
+  if (hostname.includes("cafe.naver")) return "네이버 카페";
+  return hostname || "link preview";
+};
+
+const GENERIC_PREVIEW_TITLES = new Set([
+  "네이버 지도",
+  "카카오맵",
+  "Google Maps",
+  "네이버 블로그",
+  "네이버 카페",
+  "map.naver.com",
+  "map.kakao.com",
+  "place.map.kakao.com",
+  "m.map.kakao.com",
+  "cafe.naver.com",
+  "blog.naver.com",
+]);
+
+const isGenericPreviewTitle = (value = "") => {
+  const title = decodeHtmlEntities(value).replace(/\s+/g, " ").trim();
+  if (!title) return true;
+  return GENERIC_PREVIEW_TITLES.has(title);
+};
+
+const getUrlParamValue = (url, keys) => {
+  for (const key of keys) {
+    const value = url.searchParams.get(key);
+    if (value && value.trim()) return decodeHtmlEntities(value);
+  }
+  return "";
+};
+
+const getTitleFromPath = (url) => {
+  const parts = url.pathname
+    .split("/")
+    .filter(Boolean)
+    .map((part) => {
+      try {
+        return decodeURIComponent(part.replace(/\+/g, " "));
+      } catch {
+        return part;
+      }
+    })
+    .filter((part) => {
+      if (!part || /^\d+$/.test(part)) return false;
+      if (/^[A-Za-z0-9_-]{8,}$/.test(part)) return false;
+      return true;
+    });
+
+  return parts.at(-1) || "";
+};
+
+const extractTitleFromUrl = (url) => {
+  return (
+    getUrlParamValue(url, [
+      "name",
+      "title",
+      "query",
+      "q",
+      "searchKeyword",
+      "search",
+      "keyword",
+      "placeName",
+      "place_name",
+      "keywordQuery",
+      "queryText",
+      "queryStr",
+      "place_name",
+    ]) || getTitleFromPath(url)
+  );
+};
+
+const getPreviewTitle = (html, url) => {
+  const hostname = url.hostname.toLowerCase();
+  const metaTitle =
+    getMetaContent(html, "og:title") ||
+    getMetaContent(html, "twitter:title") ||
+    getHtmlTitle(html);
+  const urlTitle = extractTitleFromUrl(url);
+
+  const isMapHost =
+    hostname === "naver.me" ||
+    hostname.includes("map.naver") ||
+    hostname.includes("map.kakao") ||
+    hostname.includes("google") ||
+    hostname === "maps.app.goo.gl" ||
+    hostname === "goo.gl";
+
+  if (isMapHost && !isGenericPreviewTitle(metaTitle)) return metaTitle;
+  if (isMapHost) return getDefaultPreviewTitle(url);
+
+  if (metaTitle && !isGenericPreviewTitle(metaTitle)) return metaTitle;
+  if (urlTitle) return urlTitle;
+  if (metaTitle) return metaTitle;
+  return getDefaultPreviewTitle(url);
+};const getPreviewDescription = (html) => {
+  return (
+    getMetaContent(html, "og:description") ||
+    getMetaContent(html, "description") ||
+    getMetaContent(html, "twitter:description") ||
+    ""
+  );
+};
+const readResponseBodyWithLimit = async (response) => {
+  if (!response.body) return new Uint8Array();
+
+  const reader = response.body.getReader();
+  const chunks = [];
+  let total = 0;
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > LINK_PREVIEW_MAX_BYTES) {
+      await reader.cancel();
+      const error = new Error("preview response too large");
+      error.status = 413;
+      throw error;
+    }
+    chunks.push(value);
+  }
+
+  const buffer = new Uint8Array(total);
+  let offset = 0;
+  chunks.forEach((chunk) => {
+    buffer.set(chunk, offset);
+    offset += chunk.byteLength;
+  });
+  return buffer;
+};
+
+const fetchPreviewHtml = async (initialUrl) => {
+  let currentUrl = initialUrl;
+
+  for (let redirectCount = 0; redirectCount <= LINK_PREVIEW_MAX_REDIRECTS; redirectCount += 1) {
+    await assertPreviewUrlAllowed(currentUrl);
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), LINK_PREVIEW_TIMEOUT_MS);
+    let response;
+    try {
+      response = await fetch(currentUrl, {
+        redirect: "manual",
+        signal: controller.signal,
+        headers: {
+          "User-Agent":
+            "Mozilla/5.0 (compatible; HLMLLinkPreview/1.0; +http://localhost)",
+          Accept: "text/html,application/xhtml+xml",
+        },
+      });
+    } finally {
+      clearTimeout(timeout);
+    }
+
+    if ([301, 302, 303, 307, 308].includes(response.status)) {
+      const location = response.headers.get("location");
+      if (!location) {
+        const error = new Error("preview redirect failed");
+        error.status = 502;
+        throw error;
+      }
+      currentUrl = new URL(location, currentUrl);
+      continue;
+    }
+
+    if (!response.ok) {
+      const error = new Error("preview fetch failed");
+      error.status = 502;
+      throw error;
+    }
+
+    const contentType = response.headers.get("content-type") || "";
+    if (!contentType.toLowerCase().includes("text/html")) {
+      const error = new Error("preview content unsupported");
+      error.status = 415;
+      throw error;
+    }
+
+    const html = decodeHtmlBuffer(
+      await readResponseBodyWithLimit(response),
+      contentType,
+    );
+    return { html, finalUrl: currentUrl };
+  }
+
+  const error = new Error("too many preview redirects");
+  error.status = 508;
+  throw error;
+};
+
+const normalizeCharset = (value = "") => {
+  const charset = String(value).toLowerCase().replace(/["']/g, "").trim();
+  if (["euc-kr", "ks_c_5601-1987", "ks_c_5601", "cp949"].includes(charset)) {
+    return "euc-kr";
+  }
+  return charset || "utf-8";
+};
+
+const getCharsetFromContentType = (contentType = "") => {
+  const match = String(contentType).match(/charset\s*=\s*([^;\s]+)/i);
+  return match?.[1] ? normalizeCharset(match[1]) : "";
+};
+
+const getCharsetFromHtml = (html = "") => {
+  const metaCharset = html.match(/<meta[^>]+charset=["']?\s*([^"'\s/>]+)/i);
+  if (metaCharset?.[1]) return normalizeCharset(metaCharset[1]);
+
+  const contentType = html.match(
+    /<meta[^>]+http-equiv=["']content-type["'][^>]+content=["'][^"']*charset=([^"';\s]+)/i,
+  );
+  return contentType?.[1] ? normalizeCharset(contentType[1]) : "";
+};
+
+const decodeHtmlBuffer = (buffer, contentType) => {
+  const bytes = buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer);
+  const headerCharset = getCharsetFromContentType(contentType);
+  const sniffedHtml = new TextDecoder("utf-8").decode(bytes.slice(0, 4096));
+  const htmlCharset = getCharsetFromHtml(sniffedHtml);
+  const charset = headerCharset || htmlCharset || "utf-8";
+
+  try {
+    return new TextDecoder(charset).decode(bytes);
+  } catch {
+    return new TextDecoder("utf-8").decode(bytes);
+  }
+};
+
 const hasBlockedRelation = async (userA, userB) => {
   const [[relation]] = await query(
     `SELECT id FROM user_relations
@@ -119,6 +533,66 @@ router.post("/upload", auth, chatUpload.single("file"), async (req, res) => {
   }
 });
 
+router.get("/link-preview", auth, async (req, res) => {
+  const rawUrl = String(req.query.url || "").trim();
+
+  try {
+    const parsedUrl = normalizePreviewUrl(rawUrl);
+    const cacheKey = parsedUrl.toString();
+    const cached = linkPreviewCache.get(cacheKey);
+
+    if (cached && cached.expiresAt > Date.now()) {
+      return res.status(cached.status).json(cached.body);
+    }
+
+    const { html, finalUrl } = await fetchPreviewHtml(parsedUrl);
+    const finalCacheKey = normalizePreviewUrl(finalUrl.toString()).toString();
+    const title = getPreviewTitle(html, finalUrl);
+    const description = getPreviewDescription(html);
+    const hostname = finalUrl.hostname.toLowerCase();
+    const siteName = getMetaContent(html, "og:site_name") || hostname;
+    const body = {
+      url: finalUrl.toString(),
+      title,
+      subtitle: description || siteName,
+      description,
+      image:
+        getMetaContent(html, "og:image") ||
+        getMetaContent(html, "twitter:image") ||
+        getFaviconUrl(html, finalUrl),
+      siteName,
+      domain: hostname,
+    };
+
+    linkPreviewCache.set(cacheKey, {
+      status: 200,
+      body,
+      expiresAt: Date.now() + LINK_PREVIEW_SUCCESS_TTL_MS,
+    });
+    linkPreviewCache.set(finalCacheKey, {
+      status: 200,
+      body,
+      expiresAt: Date.now() + LINK_PREVIEW_SUCCESS_TTL_MS,
+    });
+
+    res.json(body);
+  } catch (error) {
+    console.error("Link preview fetch failed:", error.name || error.message);
+    const status = error.status || 502;
+    const body = { message: error.message || "preview fetch failed" };
+    try {
+      const cacheKey = normalizePreviewUrl(rawUrl).toString();
+      linkPreviewCache.set(cacheKey, {
+        status,
+        body,
+        expiresAt: Date.now() + LINK_PREVIEW_FAILURE_TTL_MS,
+      });
+    } catch {
+      // Invalid URLs are not cacheable.
+    }
+    res.status(status).json(body);
+  }
+});
 router.get("/download", async (req, res) => {
   const { url, name } = req.query;
 
