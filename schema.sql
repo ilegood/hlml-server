@@ -84,6 +84,31 @@ CREATE TABLE post_participants (
     UNIQUE KEY uq_participant (post_id, user_id)
 );
 
+CREATE TABLE appointment_completions (
+    id           INT AUTO_INCREMENT PRIMARY KEY,
+    user_id      INT NOT NULL,
+    post_id      INT NOT NULL,
+    completed_at DATETIME NOT NULL,
+    created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE,
+    UNIQUE KEY uq_appointment_completion (user_id, post_id),
+    INDEX idx_appointment_completions_user_id (user_id)
+);
+
+CREATE TABLE reports (
+    id          INT AUTO_INCREMENT PRIMARY KEY,
+    reporter_id INT NOT NULL,
+    target_id   INT NOT NULL,
+    reason      VARCHAR(100) NOT NULL,
+    content     TEXT NOT NULL,
+    status      VARCHAR(20) NOT NULL DEFAULT 'pending',
+    created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (reporter_id) REFERENCES users(user_id) ON DELETE CASCADE,
+    FOREIGN KEY (target_id) REFERENCES users(user_id) ON DELETE CASCADE,
+    INDEX idx_reports_reporter_id (reporter_id),
+    INDEX idx_reports_target_id (target_id)
+);
+
 CREATE TABLE messages (
     id         INT AUTO_INCREMENT PRIMARY KEY,
     room_id    VARCHAR(50) NOT NULL,

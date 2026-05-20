@@ -5,6 +5,7 @@ import {
   registerUser,
   loginUser,
   getProfile,
+  getMyStats,
   getUserPublicProfile,
   updateProfile,
   searchUsersController,
@@ -16,6 +17,7 @@ const router = express.Router();
 router.post("/register", registerUser);
 router.post("/login", loginUser);
 router.get("/profile", auth, getProfile);
+router.get("/me/stats", auth, getMyStats);
 router.get("/search", auth, searchUsersController);
 router.patch("/profile", auth, upload.single("profile_img"), updateProfile);
 router.delete("/", auth, deleteUserController);

@@ -26,6 +26,51 @@ const ensureReportColumns = async (connection) => {
   );
 };
 
+const mapReportRow = (row) => ({
+  id: row.id,
+  targetUserId: row.target_id,
+  targetName: row.target_name,
+  targetProfileImg: row.target_profile_img,
+  reason: row.reason,
+  content: row.content,
+  status: row.status,
+  reportCount: row.report_count,
+  createdAt: row.created_at,
+});
+
+router.get("/my", auth, async (req, res) => {
+  const reporterId = req.userId;
+  const connection = await pool.getConnection();
+
+  try {
+    await ensureReportColumns(connection);
+    const [rows] = await connection.query(
+      `SELECT
+         r.id,
+         r.target_id,
+         u.nickname AS target_name,
+         u.profile_img AS target_profile_img,
+         r.reason,
+         r.content,
+         r.status,
+         u.report_count,
+         r.created_at
+       FROM reports r
+       JOIN users u ON u.user_id = r.target_id
+       WHERE r.reporter_id = ?
+         AND r.created_at >= DATE_SUB(NOW(), INTERVAL 24 HOUR)
+       ORDER BY r.created_at DESC`,
+      [reporterId],
+    );
+    res.json(rows.map(mapReportRow));
+  } catch (err) {
+    console.error("Report list failed:", err);
+    res.status(500).json({ message: "report list failed" });
+  } finally {
+    connection.release();
+  }
+});
+
 router.post("/", auth, async (req, res) => {
   const reporterId = req.userId;
   const { targetUserId, reason, content } = req.body;
