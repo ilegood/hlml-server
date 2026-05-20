@@ -141,11 +141,15 @@ export const getComments = (postId, viewerId) =>
   repo.getComments(postId, viewerId);
 
 export const createComment = (req) => {
+  const { body, file, params } = req;
+  const image = file ? file.path : null;
+
   return repo.createComment({
-    postId: req.params.id,
+    postId: params.id,
     userId: req.userId,
-    content: req.body.content,
-    parent_id: req.body.parent_id,
+    content: body.content,
+    parent_id: body.parent_id,
+    image,
   });
 };
 
