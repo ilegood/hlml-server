@@ -1,5 +1,17 @@
 import pool from "../db.js";
 
+let columnsEnsured = false;
+
+const ensurePostColumns = async () => {
+  if (columnsEnsured) return;
+  try {
+    await pool.query("ALTER TABLE posts ADD COLUMN is_deleted BOOLEAN DEFAULT FALSE");
+  } catch (err) {
+    if (err.errno !== 1060) console.warn("Failed to add is_deleted column:", err.message);
+  }
+  columnsEnsured = true;
+};
+
 const STATUS_OPEN = "\ubaa8\uc9d1\uc911";
 const STATUS_CLOSED = "\ubaa8\uc9d1\uc644\ub8cc";
 
@@ -187,6 +199,7 @@ export const getPostWithDetails = async (id, viewerId = null) => {
 };
 
 export const getPosts = async (viewerId = null) => {
+  await ensurePostColumns();
   const blockedUserIds = await getBlockedUserIds(viewerId);
   const authorJoin = "JOIN users u ON p.user_id = u.user_id";
   const postSelect = "p.*";

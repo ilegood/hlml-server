@@ -9,9 +9,25 @@ import friendsRoutes from "./routes/friends.js";
 import postRoutes from "./routes/post.js";
 import reportRoutes from "./routes/report.js";
 import userRoutes from "./routes/user.js";
+import pool from "./db.js";
 import { registerChatSocket } from "./socket/chat.socket.js";
 import { startAppointmentReminderJob } from "./workers/appointmentReminders.js";
 import { startPostDeletionJob } from "./workers/deleteExpiredPosts.js";
+
+const ensureMissingColumns = async () => {
+  const tables = [
+    { table: "posts", column: "is_deleted", type: "BOOLEAN DEFAULT FALSE" },
+    { table: "messages", column: "is_deleted", type: "BOOLEAN DEFAULT FALSE" },
+    { table: "messages", column: "is_edited", type: "BOOLEAN DEFAULT FALSE" },
+  ];
+  for (const { table, column, type } of tables) {
+    try {
+      await pool.query(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`);
+    } catch (err) {
+      if (err.errno !== 1060) console.warn(`Failed to add ${table}.${column}:`, err.message);
+    }
+  }
+};
 
 const app = express();
 const server = http.createServer(app);
@@ -37,9 +53,11 @@ app.set("io", io);
 
 registerChatSocket(io);
 
-startAppointmentReminderJob(io);
-startPostDeletionJob(io);
+ensureMissingColumns().then(() => {
+  startAppointmentReminderJob(io);
+  startPostDeletionJob(io);
 
-server.listen(env.port, () => {
-  console.log(`Server running on ${env.port}`);
+  server.listen(env.port, () => {
+    console.log(`Server running on ${env.port}`);
+  });
 });

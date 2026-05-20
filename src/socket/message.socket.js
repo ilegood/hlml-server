@@ -1,6 +1,23 @@
 import pool from "../db.js";
 import { toInt } from "./utils.js";
 
+let messagesColumnsEnsured = false;
+
+const ensureMessagesColumns = async () => {
+  if (messagesColumnsEnsured) return;
+  try {
+    await pool.query("ALTER TABLE messages ADD COLUMN is_deleted BOOLEAN DEFAULT FALSE");
+  } catch (err) {
+    if (err.errno !== 1060) console.warn("Failed to add messages column:", err.message);
+  }
+  try {
+    await pool.query("ALTER TABLE messages ADD COLUMN is_edited BOOLEAN DEFAULT FALSE");
+  } catch (err) {
+    if (err.errno !== 1060) console.warn("Failed to add is_edited column:", err.message);
+  }
+  messagesColumnsEnsured = true;
+};
+
 const getRoomMemberIds = async (roomStr) => {
   if (roomStr.startsWith("dm_")) {
     const dmRoomId = Number(roomStr.slice(3));
@@ -114,6 +131,8 @@ export const registerMessageSocket = (io, socket) => {
     const userIdInt = toInt(socket.data.userId);
     if (!roomStr || !messageId || !userIdInt || !content?.trim()) return;
 
+    await ensureMessagesColumns();
+
     try {
       const [result] = await pool.query(
         `UPDATE messages
@@ -136,6 +155,8 @@ export const registerMessageSocket = (io, socket) => {
     const roomStr = String(roomId);
     const userIdInt = toInt(socket.data.userId);
     if (!roomStr || !messageId || !userIdInt) return;
+
+    await ensureMessagesColumns();
 
     try {
       const [result] = await pool.query(
