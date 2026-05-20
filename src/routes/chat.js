@@ -576,6 +576,14 @@ router.delete("/dm/:roomId", auth, async (req, res) => {
     }
 
     const roomKey = `dm_${roomIdInt}`;
+    await connection.query(
+      `DELETE mr FROM message_reactions mr JOIN messages m ON mr.message_id = m.id WHERE m.room_id = ?`,
+      [roomKey],
+    );
+    await connection.query(
+      `DELETE mrd FROM message_reads mrd JOIN messages m ON mrd.message_id = m.id WHERE m.room_id = ?`,
+      [roomKey],
+    );
     await connection.query("DELETE FROM messages WHERE room_id = ?", [roomKey]);
     await connection.query("DELETE FROM dm_rooms WHERE id = ?", [roomIdInt]);
 

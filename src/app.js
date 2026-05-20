@@ -27,6 +27,39 @@ const ensureMissingColumns = async () => {
       if (err.errno !== 1060) console.warn(`Failed to add ${table}.${column}:`, err.message);
     }
   }
+  const extraTables = [
+    `CREATE TABLE IF NOT EXISTS dm_rooms (
+      id          INT AUTO_INCREMENT PRIMARY KEY,
+      user1_id    INT NOT NULL,
+      user2_id    INT NOT NULL,
+      created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE KEY uq_dm (user1_id, user2_id)
+    )`,
+    `CREATE TABLE IF NOT EXISTS message_reactions (
+      id          INT AUTO_INCREMENT PRIMARY KEY,
+      message_id  INT NOT NULL,
+      user_id     INT NOT NULL,
+      emoji       VARCHAR(50) NOT NULL,
+      created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE KEY uq_reaction (message_id, user_id, emoji),
+      INDEX idx_message_reactions_user_id (user_id)
+    )`,
+    `CREATE TABLE IF NOT EXISTS message_reads (
+      id          INT AUTO_INCREMENT PRIMARY KEY,
+      message_id  INT NOT NULL,
+      user_id     INT NOT NULL,
+      created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE KEY uq_read (message_id, user_id),
+      INDEX idx_message_reads_user_id (user_id)
+    )`,
+  ];
+  for (const ddl of extraTables) {
+    try {
+      await pool.query(ddl);
+    } catch (err) {
+      console.warn("Failed to create table:", err.message);
+    }
+  }
 };
 
 const app = express();
