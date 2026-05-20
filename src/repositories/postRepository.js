@@ -499,6 +499,11 @@ export const toggleJoinPost = async (userId, postId) => {
     await pool.query("DELETE FROM post_participants WHERE id=?", [existing.id]);
     await syncPostParticipantState(postId, post.capacity, post.status, wasFull);
 
+    await pool.query(
+      "DELETE FROM messages WHERE room_id = ? AND user_id = ? AND is_system = 1 AND content = ?",
+      [postId, userId, `${user.nickname}님이 들어왔습니다.`],
+    );
+
     const leaveMsgContent = `${user.nickname}님이 퇴장하셨습니다.`;
     const [msgResult] = await pool.query(
       "INSERT INTO messages (room_id, user_id, nickname, content, is_system) VALUES (?, ?, ?, ?, ?)",
@@ -623,6 +628,11 @@ export const leavePost = async (userId, postId) => {
 
   const wasFull = (post.participants || 1) >= (post.capacity || 2);
   await syncPostParticipantState(postId, post.capacity, post.status, wasFull);
+
+  await pool.query(
+    "DELETE FROM messages WHERE room_id = ? AND user_id = ? AND is_system = 1 AND content = ?",
+    [postId, userId, `${user.nickname}님이 들어왔습니다.`],
+  );
 
   const leaveMsgContent = `${user.nickname}님이 퇴장하셨습니다.`;
   const [msgResult] = await pool.query(
