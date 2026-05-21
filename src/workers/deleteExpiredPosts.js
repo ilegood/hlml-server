@@ -1,6 +1,5 @@
 import cron from "node-cron";
 import pool from "../db.js";
-import { cloudinary } from "../middleware/cloudinary.js";
 
 const TIMEZONE = "Asia/Seoul";
 const LATE_NIGHT_GRACE_START = "22:00:00";
@@ -36,95 +35,6 @@ const getSeoulDateTimeString = (offsetMinutes = 0) => {
 const getSeoulIsoString = () => `${getSeoulDateTimeString().replace(" ", "T")}+09:00`;
 
 const toSeoulIsoString = (value) => `${String(value).replace(" ", "T")}+09:00`;
-
-const parseMessageAttachments = (content) => {
-  if (!content || typeof content !== "string") return [];
-
-  try {
-    const parsed = JSON.parse(content);
-    if (parsed?.kind === "chat_payload" && Array.isArray(parsed.attachments)) {
-      return parsed.attachments;
-    }
-    if (parsed?.kind === "chat_attachment") {
-      return [parsed];
-    }
-  } catch {
-    return [];
-  }
-
-  return [];
-};
-
-const addCloudinaryAsset = (assets, publicId, resourceType = "image") => {
-  if (!publicId) return;
-  const normalizedType = ["image", "video", "raw"].includes(resourceType)
-    ? resourceType
-    : "image";
-  assets.set(`${normalizedType}:${publicId}`, {
-    publicId,
-    resourceType: normalizedType,
-  });
-};
-
-const getPublicIdFromCloudinaryUrl = (url) => {
-  if (!url) return null;
-
-  try {
-    const parsed = new URL(url);
-    if (parsed.hostname !== "res.cloudinary.com") return null;
-
-    const uploadIndex = parsed.pathname.indexOf("/upload/");
-    if (uploadIndex === -1) return null;
-
-    const pathAfterUpload = parsed.pathname.slice(uploadIndex + "/upload/".length);
-    const withoutVersion = pathAfterUpload.replace(/^v\d+\//, "");
-    return withoutVersion.replace(/\.[^/.]+$/, "");
-  } catch {
-    return null;
-  }
-};
-
-const collectCloudinaryAssets = async (connection, postIds) => {
-  if (postIds.length === 0) return [];
-
-  const assets = new Map();
-  const [posts] = await connection.query(
-    "SELECT image FROM posts WHERE post_id IN (?)",
-    [postIds],
-  );
-  posts.forEach((post) => {
-    addCloudinaryAsset(assets, getPublicIdFromCloudinaryUrl(post.image), "image");
-  });
-
-  const roomIds = postIds.map(String);
-  const [messages] = await connection.query(
-    "SELECT content FROM messages WHERE room_id IN (?)",
-    [roomIds],
-  );
-  messages.forEach((message) => {
-    parseMessageAttachments(message.content).forEach((attachment) => {
-      addCloudinaryAsset(
-        assets,
-        attachment.publicId || getPublicIdFromCloudinaryUrl(attachment.url),
-        attachment.resourceType,
-      );
-    });
-  });
-
-  return [...assets.values()];
-};
-
-const deleteCloudinaryAssets = async (assets) => {
-  if (assets.length === 0) return;
-
-  await Promise.allSettled(
-    assets.map((asset) =>
-      cloudinary.uploader.destroy(asset.publicId, {
-        resource_type: asset.resourceType,
-      }),
-    ),
-  );
-};
 
 const getPostMemberIds = async (connection, postId) => {
   const [rows] = await connection.query(

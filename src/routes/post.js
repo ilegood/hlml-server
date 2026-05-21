@@ -35,7 +35,6 @@ router.get("/:id", optionalAuth, postController.getPost);
 router.post("/", auth, upload.single("image"), postController.createPost);
 router.patch("/:id", auth, upload.single("image"), postController.updatePost);
 router.delete("/:id", auth, postController.deletePost);
-router.post("/:id/hide", auth, postController.hidePost);
 
 // like / join
 router.post("/:id/like", auth, postController.likePost);
@@ -47,8 +46,8 @@ router.delete("/:id/ban", auth, postController.deletePostBan);
 
 // comments
 router.get("/:id/comments", optionalAuth, postController.getComments);
-router.post("/:id/comments", auth, postController.createComment);
-router.patch("/comments/:id", auth, postController.updateComment);
+router.post("/:id/comments", auth, upload.single("image"), postController.createComment);
+router.patch("/comments/:id", auth, upload.single("image"), postController.updateComment);
 router.delete("/comments/:id", auth, postController.deleteComment);
 
 export default router;

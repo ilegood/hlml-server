@@ -66,17 +66,6 @@ export const deletePost = async (req, res) => {
   }
 };
 
-export const hidePost = async (req, res) => {
-  try {
-    const affectedRows = await postService.hidePost(req.params.id, req.userId);
-    if (!affectedRows) return res.status(404).json({ message: "not found or unauthorized" });
-    res.json({ success: true });
-  } catch (e) {
-    console.error(e);
-    res.status(500).json({ message: "hide error" });
-  }
-};
-
 export const likePost = async (req, res) => {
   try {
     const data = await postService.likePost(req.userId, req.params.id);

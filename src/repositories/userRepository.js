@@ -62,7 +62,7 @@ export const searchUsers = async (query, myId) => {
 export const findUserStats = async (userId) => {
   const [[rows]] = await pool.query(
     `SELECT
-       (SELECT COUNT(*) FROM posts WHERE author_id = ? AND is_deleted = FALSE) AS posts,
+       (SELECT COUNT(*) FROM posts WHERE user_id = ? AND is_deleted = FALSE) AS posts,
        (SELECT COUNT(*) FROM post_participants WHERE user_id = ?) AS appointments,
        COALESCE((SELECT report_count FROM users WHERE user_id = ?), 0) AS reports`,
     [userId, userId, userId]

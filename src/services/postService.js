@@ -132,8 +132,6 @@ export const updatePost = async (req) => {
 
 export const deletePost = (id, userId) => repo.deletePost(id, userId);
 
-export const hidePost = (id, userId) => repo.hidePost(id, userId);
-
 export const likePost = (userId, postId) => repo.toggleLikePost(userId, postId);
 
 export const joinPost = (userId, postId) => repo.toggleJoinPost(userId, postId);
@@ -144,11 +142,15 @@ export const getComments = (postId, viewerId) =>
   repo.getComments(postId, viewerId);
 
 export const createComment = (req) => {
+  const { body, file, params } = req;
+  const image = file ? file.path : null;
+
   return repo.createComment({
-    postId: req.params.id,
+    postId: params.id,
     userId: req.userId,
-    content: req.body.content,
-    parent_id: req.body.parent_id,
+    content: body.content,
+    parent_id: body.parent_id,
+    image,
   });
 };
 

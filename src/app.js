@@ -24,7 +24,8 @@ const ensureMissingColumns = async () => {
     try {
       await pool.query(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`);
     } catch (err) {
-      if (err.errno !== 1060) console.warn(`Failed to add ${table}.${column}:`, err.message);
+      if (err.errno !== 1060)
+        console.warn(`Failed to add ${table}.${column}:`, err.message);
     }
   }
   const extraTables = [
@@ -61,8 +62,15 @@ const ensureMissingColumns = async () => {
     }
   }
 };
+import path from "path";
+import { fileURLToPath } from "url";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const app = express();
+
+app.use("/uploads", express.static(path.join(__dirname, "../../uploads")));
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
@@ -81,8 +89,6 @@ app.use("/posts", postRoutes);
 app.use("/reports", reportRoutes);
 app.use("/users", userRoutes);
 app.use("/chat", chatRoutes);
-
-app.set("io", io);
 
 registerChatSocket(io);
 
