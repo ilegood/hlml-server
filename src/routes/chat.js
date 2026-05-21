@@ -1050,6 +1050,14 @@ router.delete("/dm/:roomId", auth, async (req, res) => {
     }
 
     const roomKey = `dm_${roomIdInt}`;
+    await connection.query(
+      `DELETE mr FROM message_reactions mr JOIN messages m ON mr.message_id = m.id WHERE m.room_id = ?`,
+      [roomKey],
+    );
+    await connection.query(
+      `DELETE mrd FROM message_reads mrd JOIN messages m ON mrd.message_id = m.id WHERE m.room_id = ?`,
+      [roomKey],
+    );
     await connection.query("DELETE FROM messages WHERE room_id = ?", [roomKey]);
     await connection.query("DELETE FROM dm_rooms WHERE id = ?", [roomIdInt]);
 
@@ -1068,6 +1076,71 @@ router.delete("/dm/:roomId", auth, async (req, res) => {
     res.status(500).json({ message: "dm delete failed" });
   } finally {
     connection.release();
+  }
+});
+
+router.post("/share", auth, async (req, res) => {
+  const myId = req.userId;
+  const { targetId, postId, postTitle } = req.body;
+
+  if (!targetId || !postId) {
+    return res.status(400).json({ message: "대상과 게시글 정보가 필요합니다." });
+  }
+
+  try {
+    if (await hasBlockedRelation(myId, targetId)) {
+      return res.status(403).json({ message: "blocked user" });
+    }
+
+    const u1 = Math.min(myId, targetId);
+    const u2 = Math.max(myId, targetId);
+    const [[existing]] = await query(
+      "SELECT id FROM dm_rooms WHERE user1_id = ? AND user2_id = ?",
+      [u1, u2],
+    );
+
+    let roomId = existing?.id;
+    if (!roomId) {
+      const [result] = await query(
+        "INSERT INTO dm_rooms (user1_id, user2_id) VALUES (?, ?)",
+        [u1, u2],
+      );
+      roomId = result.insertId;
+    }
+
+    const roomStr = `dm_${roomId}`;
+    const [[myInfo]] = await query(
+      "SELECT nickname FROM users WHERE user_id = ?",
+      [myId],
+    );
+    const content = JSON.stringify({
+      kind: "share_post",
+      postId,
+      postTitle: postTitle || "게시글",
+      sharerNickname: myInfo?.nickname || "알 수 없음",
+    });
+
+    const [result] = await query(
+      "INSERT INTO messages (room_id, user_id, nickname, content, is_system) VALUES (?, ?, ?, ?, ?)",
+      [roomStr, myId, myInfo?.nickname || "", content, 1],
+    );
+
+    const io = req.app.get("io");
+    io?.to(roomStr)?.emit("receive_message", {
+      id: result.insertId,
+      roomId: roomStr,
+      userId: myId,
+      nickname: myInfo?.nickname || "",
+      content,
+      isSystem: true,
+      parentId: null,
+      created_at: new Date().toISOString(),
+    });
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Share failed:", err);
+    res.status(500).json({ message: "게시글 공유에 실패했습니다." });
   }
 });
 

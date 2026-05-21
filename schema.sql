@@ -47,6 +47,8 @@ CREATE TABLE posts (
     created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     edited       BOOLEAN DEFAULT FALSE,
     report_count INT DEFAULT 0,
+    is_deleted   BOOLEAN DEFAULT FALSE,
+    is_author_hidden BOOLEAN DEFAULT FALSE,
     FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE,
     INDEX idx_posts_user_id (user_id)
 );
@@ -81,6 +83,7 @@ CREATE TABLE post_participants (
     id      INT AUTO_INCREMENT PRIMARY KEY,
     post_id INT NOT NULL,
     user_id INT NOT NULL,
+    is_hidden BOOLEAN DEFAULT FALSE,
     FOREIGN KEY (post_id) REFERENCES posts(post_id) ON DELETE CASCADE,
     FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE,
     UNIQUE KEY uq_participant (post_id, user_id)

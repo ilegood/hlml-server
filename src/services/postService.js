@@ -52,7 +52,9 @@ const assertValidAppointmentDate = (date) => {
   }
 
   if (date > nextYearTodayString()) {
-    const error = new Error("약속 날짜는 최대 내년 오늘까지 선택할 수 있습니다.");
+    const error = new Error(
+      "약속 날짜는 최대 내년 오늘까지 선택할 수 있습니다.",
+    );
     error.status = 400;
     throw error;
   }
@@ -93,6 +95,7 @@ const normalizePostData = (body) => {
 };
 
 export const getPosts = (viewerId, options) => repo.getPosts(viewerId, options);
+export const getMyChatRooms = (userId) => repo.getMyChatRooms(userId);
 export const getPost = (id, viewerId) => repo.getPostWithDetails(id, viewerId);
 
 export const createPost = async (req) => {
@@ -161,4 +164,5 @@ export const deleteComment = (id, userId) => repo.deleteComment(id, userId);
 
 export const getKickedPosts = (userId) => repo.getKickedPostsForUser(userId);
 
-export const deletePostBan = (userId, postId) => repo.deletePostBan(userId, postId);
+export const deletePostBan = (userId, postId) =>
+  repo.deletePostBan(userId, postId);

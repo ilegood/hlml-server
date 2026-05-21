@@ -120,7 +120,7 @@ export const registerRoomSocket = (io, socket) => {
         }
 
         if (nickname && userIdInt) {
-          const joinMsgContent = `${nickname}\ub2d8\uc774 \uc785\uc7a5\ud558\uc168\uc2b5\ub2c8\ub2e4.`;
+          const joinMsgContent = `${nickname}님이 들어왔습니다.`;
           const [existing] = await query(
             "SELECT id FROM messages WHERE room_id = ? AND user_id = ? AND is_system = 1 AND content = ?",
             [roomStr, userIdInt, joinMsgContent],
@@ -134,6 +134,22 @@ export const registerRoomSocket = (io, socket) => {
             });
 
             io.to(roomStr).emit("receive_message", message);
+
+            // Send entrance alarm to all participants
+            const [members] = await query(
+              "SELECT user_id FROM post_participants WHERE post_id = ? UNION SELECT user_id FROM posts WHERE post_id = ?",
+              [roomIdInt, roomIdInt],
+            );
+
+            members.forEach((member) => {
+              if (String(member.user_id) !== String(userIdInt)) {
+                io.to(`user_${member.user_id}`).emit("entrance_alarm", {
+                  roomId: roomStr,
+                  roomTitle: roomRows[0].title,
+                  message: joinMsgContent,
+                });
+              }
+            });
           }
         }
       }

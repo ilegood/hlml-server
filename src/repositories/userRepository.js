@@ -53,16 +53,19 @@ export const searchUsers = async (query, myId) => {
      WHERE nickname LIKE ?
      AND is_deleted = FALSE
      AND user_id != ?
-     AND user_id NOT IN (
-       SELECT target_id FROM user_relations
-       WHERE requester_id = ? AND status = 'blocked'
-     )
-     AND user_id NOT IN (
-       SELECT requester_id FROM user_relations
-       WHERE target_id = ? AND status = 'blocked'
-     )
      LIMIT 10`,
-    [`%${query}%`, myId, myId, myId]
+    [`%${query}%`, myId]
+  );
+  return rows;
+};
+
+export const findUserStats = async (userId) => {
+  const [[rows]] = await pool.query(
+    `SELECT
+       (SELECT COUNT(*) FROM posts WHERE user_id = ? AND is_deleted = FALSE) AS posts,
+       (SELECT COUNT(*) FROM post_participants WHERE user_id = ?) AS appointments,
+       COALESCE((SELECT report_count FROM users WHERE user_id = ?), 0) AS reports`,
+    [userId, userId, userId]
   );
   return rows;
 };

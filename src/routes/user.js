@@ -10,6 +10,7 @@ import {
   updateProfile,
   searchUsersController,
   deleteUserController,
+  getUserStats,
 } from "../controllers/userController.js";
 
 const router = express.Router();
@@ -18,6 +19,7 @@ router.post("/register", registerUser);
 router.post("/login", loginUser);
 router.get("/profile", auth, getProfile);
 router.get("/me/stats", auth, getMyStats);
+router.get("/me/stats", auth, getUserStats);
 router.get("/search", auth, searchUsersController);
 router.patch("/profile", auth, upload.single("profile_img"), updateProfile);
 router.delete("/", auth, deleteUserController);

@@ -19,9 +19,11 @@ const getSeoulDateTimeString = (offsetMinutes = 0) => {
   return `${values.year}-${values.month}-${values.day} ${values.hour}:${values.minute}:${values.second}`;
 };
 
-const getUpcomingAppointmentReminders = async () => {
-  const windowStart = getSeoulDateTimeString(30);
-  const windowEnd = getSeoulDateTimeString(31);
+const REMINDER_INTERVALS = [30, 20, 10];
+
+const getUpcomingAppointmentReminders = async (minutesBefore) => {
+  const windowStart = getSeoulDateTimeString(minutesBefore);
+  const windowEnd = getSeoulDateTimeString(minutesBefore + 1);
 
   const [rows] = await pool.query(
     `SELECT DISTINCT
@@ -49,22 +51,25 @@ const getUpcomingAppointmentReminders = async () => {
 
 const sendAppointmentReminders = async (io) => {
   try {
-    const reminders = await getUpcomingAppointmentReminders();
+    for (const minutesBefore of REMINDER_INTERVALS) {
+      const reminders = await getUpcomingAppointmentReminders(minutesBefore);
 
-    reminders.forEach((row) => {
-      io.to(`user_${row.userId}`).emit("appointment_reminder", {
-        id: `reminder:${row.roomId}`,
-        type: "appointment",
-        roomId: row.roomId,
-        title: row.title || "약속",
-        date: row.date,
-        time: row.time,
-        place: row.place,
+      reminders.forEach((row) => {
+        io.to(`user_${row.userId}`).emit("appointment_reminder", {
+          id: `reminder:${row.roomId}:${minutesBefore}`,
+          type: "appointment",
+          roomId: row.roomId,
+          title: row.title || "약속",
+          date: row.date,
+          time: row.time,
+          place: row.place,
+          remainingMinutes: minutesBefore,
+        });
       });
-    });
 
-    if (reminders.length > 0) {
-      console.log(`Sent appointment reminders to ${reminders.length} user(s).`);
+      if (reminders.length > 0) {
+        console.log(`Sent ${minutesBefore}min reminders to ${reminders.length} user(s).`);
+      }
     }
   } catch (error) {
     console.error("Error sending appointment reminders:", error);

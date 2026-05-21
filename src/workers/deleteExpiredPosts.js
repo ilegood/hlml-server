@@ -1,6 +1,5 @@
 import cron from "node-cron";
 import pool from "../db.js";
-import { cloudinary } from "../middleware/cloudinary.js";
 
 const TIMEZONE = "Asia/Seoul";
 const LATE_NIGHT_GRACE_START = "22:00:00";
@@ -29,102 +28,16 @@ const getSeoulDateTimeString = (offsetMinutes = 0) => {
     second: "2-digit",
     hour12: false,
   }).formatToParts(date);
-  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  const values = Object.fromEntries(
+    parts.map((part) => [part.type, part.value]),
+  );
   return `${values.year}-${values.month}-${values.day} ${values.hour}:${values.minute}:${values.second}`;
 };
 
-const getSeoulIsoString = () => `${getSeoulDateTimeString().replace(" ", "T")}+09:00`;
+const getSeoulIsoString = () =>
+  `${getSeoulDateTimeString().replace(" ", "T")}+09:00`;
 
 const toSeoulIsoString = (value) => `${String(value).replace(" ", "T")}+09:00`;
-
-const parseMessageAttachments = (content) => {
-  if (!content || typeof content !== "string") return [];
-
-  try {
-    const parsed = JSON.parse(content);
-    if (parsed?.kind === "chat_payload" && Array.isArray(parsed.attachments)) {
-      return parsed.attachments;
-    }
-    if (parsed?.kind === "chat_attachment") {
-      return [parsed];
-    }
-  } catch {
-    return [];
-  }
-
-  return [];
-};
-
-const addCloudinaryAsset = (assets, publicId, resourceType = "image") => {
-  if (!publicId) return;
-  const normalizedType = ["image", "video", "raw"].includes(resourceType)
-    ? resourceType
-    : "image";
-  assets.set(`${normalizedType}:${publicId}`, {
-    publicId,
-    resourceType: normalizedType,
-  });
-};
-
-const getPublicIdFromCloudinaryUrl = (url) => {
-  if (!url) return null;
-
-  try {
-    const parsed = new URL(url);
-    if (parsed.hostname !== "res.cloudinary.com") return null;
-
-    const uploadIndex = parsed.pathname.indexOf("/upload/");
-    if (uploadIndex === -1) return null;
-
-    const pathAfterUpload = parsed.pathname.slice(uploadIndex + "/upload/".length);
-    const withoutVersion = pathAfterUpload.replace(/^v\d+\//, "");
-    return withoutVersion.replace(/\.[^/.]+$/, "");
-  } catch {
-    return null;
-  }
-};
-
-const collectCloudinaryAssets = async (connection, postIds) => {
-  if (postIds.length === 0) return [];
-
-  const assets = new Map();
-  const [posts] = await connection.query(
-    "SELECT image FROM posts WHERE post_id IN (?)",
-    [postIds],
-  );
-  posts.forEach((post) => {
-    addCloudinaryAsset(assets, getPublicIdFromCloudinaryUrl(post.image), "image");
-  });
-
-  const roomIds = postIds.map(String);
-  const [messages] = await connection.query(
-    "SELECT content FROM messages WHERE room_id IN (?)",
-    [roomIds],
-  );
-  messages.forEach((message) => {
-    parseMessageAttachments(message.content).forEach((attachment) => {
-      addCloudinaryAsset(
-        assets,
-        attachment.publicId || getPublicIdFromCloudinaryUrl(attachment.url),
-        attachment.resourceType,
-      );
-    });
-  });
-
-  return [...assets.values()];
-};
-
-const deleteCloudinaryAssets = async (assets) => {
-  if (assets.length === 0) return;
-
-  await Promise.allSettled(
-    assets.map((asset) =>
-      cloudinary.uploader.destroy(asset.publicId, {
-        resource_type: asset.resourceType,
-      }),
-    ),
-  );
-};
 
 const getPostMemberIds = async (connection, postId) => {
   const [rows] = await connection.query(
@@ -191,7 +104,7 @@ const emitToPostMembers = async (connection, io, post, eventName, payload) => {
 };
 
 const buildWarningMessage = (title) =>
-  `'${title}' 게시글의 약속 날짜가 지났습니다. 30분 뒤 채팅방과 채팅 기록, 파일이 삭제됩니다.`;
+  `'${title}' 게시글의 약속 날짜가 지났습니다. 30분 뒤 게시판에서 만료 처리되지만, 참여 중인 채팅방은 계속 유지됩니다.`;
 
 const sendDeletionWarnings = async (io) => {
   const warningStart = getSeoulDateTimeString(30);
@@ -227,12 +140,18 @@ const sendDeletionWarnings = async (io) => {
 
       const connection = await pool.getConnection();
       try {
-        await emitToPostMembers(connection, io, post, "chat_room_deletion_warning", {
-          roomId,
-          title,
-          deletesAt,
-          message: content,
-        });
+        await emitToPostMembers(
+          connection,
+          io,
+          post,
+          "chat_room_deletion_warning",
+          {
+            roomId,
+            title,
+            deletesAt,
+            message: content,
+          },
+        );
       } finally {
         connection.release();
       }
@@ -249,8 +168,6 @@ const sendDeletionWarnings = async (io) => {
 const deleteExpiredPosts = async (io) => {
   const now = getSeoulDateTimeString();
   let connection;
-  let cloudinaryAssets = [];
-  let deletedPosts = [];
 
   try {
     connection = await pool.getConnection();
@@ -260,6 +177,7 @@ const deleteExpiredPosts = async (io) => {
       `SELECT post_id, title
        FROM posts
        WHERE date IS NOT NULL
+         AND is_deleted = 0
          AND ${expirationDeadlineSql} <= ?`,
       [now],
     );
@@ -281,25 +199,35 @@ const deleteExpiredPosts = async (io) => {
       })),
     );
 
-    await connection.query("DELETE FROM messages WHERE room_id IN (?)", [roomIds]);
-    await connection.query("DELETE FROM posts WHERE post_id IN (?)", [postIds]);
+    // Update is_deleted = 1 instead of physical deletion
+    await connection.query(
+      "UPDATE posts SET is_deleted = 1 WHERE post_id IN (?)",
+      [postIds],
+    );
 
     await connection.commit();
 
-    deletedPosts.forEach(({ memberIds, ...post }) => {
-      io.to(post.roomId).emit("chat_room_deleted", post);
+    for (const post of expiredPosts) {
+      const roomId = String(post.post_id);
+      const memberIds = await getPostMemberIds(connection, post.post_id);
+
+      const expiredPayload = {
+        roomId,
+        title: post.title || "약속 게시글",
+        message:
+          "약속 시간이 지나 게시판에서 만료되었습니다. 채팅방은 유지됩니다.",
+      };
+
+      io.to(roomId).emit("chat_room_expired", expiredPayload);
       memberIds.forEach((memberId) => {
-        io.to(`user_${memberId}`).emit("chat_room_deleted", post);
+        io.to(`user_${memberId}`).emit("chat_room_expired", expiredPayload);
       });
-      io.in(post.roomId).socketsLeave(post.roomId);
-    });
+    }
 
-    await deleteCloudinaryAssets(cloudinaryAssets);
-
-    console.log(`Deleted ${expiredPosts.length} expired post(s) before ${now}.`);
+    console.log(`Expired ${expiredPosts.length} post(s) before ${now}.`);
   } catch (error) {
     if (connection) await connection.rollback();
-    console.error("Error deleting expired posts:", error);
+    console.error("Error expiring posts:", error);
   } finally {
     if (connection) connection.release();
   }
