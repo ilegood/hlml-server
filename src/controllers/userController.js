@@ -21,6 +21,70 @@ import {
   updatePostParticipantsAndStatus,
 } from "../repositories/postRepository.js";
 
+const getSeoulDateTimeString = () => {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Seoul",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  }).formatToParts(new Date());
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${values.year}-${values.month}-${values.day} ${values.hour}:${values.minute}:${values.second}`;
+};
+
+const ensureAppointmentCompletions = async (connection) => {
+  await connection.query(
+    `CREATE TABLE IF NOT EXISTS appointment_completions (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      user_id INT NOT NULL,
+      post_id INT NOT NULL,
+      completed_at DATETIME NOT NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE KEY uq_appointment_completion (user_id, post_id),
+      INDEX idx_appointment_completions_user_id (user_id),
+      FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
+    )`,
+  );
+};
+
+const ensureReportsTable = async (connection) => {
+  await connection.query(
+    `CREATE TABLE IF NOT EXISTS reports (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      reporter_id INT NOT NULL,
+      target_id INT NOT NULL,
+      reason VARCHAR(100) NOT NULL,
+      content TEXT NOT NULL,
+      status VARCHAR(20) NOT NULL DEFAULT 'pending',
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (reporter_id) REFERENCES users(user_id) ON DELETE CASCADE,
+      FOREIGN KEY (target_id) REFERENCES users(user_id) ON DELETE CASCADE,
+      INDEX idx_reports_reporter_id (reporter_id),
+      INDEX idx_reports_target_id (target_id)
+    )`,
+  );
+};
+
+const syncCompletedAppointments = async (connection, userId) => {
+  await ensureAppointmentCompletions(connection);
+  await connection.query(
+    `INSERT IGNORE INTO appointment_completions (user_id, post_id, completed_at)
+     SELECT ?, p.post_id, TIMESTAMP(p.date, p.time)
+     FROM posts p
+     LEFT JOIN post_participants pp
+       ON pp.post_id = p.post_id AND pp.user_id = ?
+     WHERE (p.user_id = ? OR pp.user_id = ?)
+       AND p.date IS NOT NULL
+       AND p.time IS NOT NULL
+       AND TIMESTAMP(p.date, p.time) <= ?`,
+    [userId, userId, userId, userId, getSeoulDateTimeString()],
+  );
+};
+
 export const registerUser = async (req, res) => {
   const { nickname, email, password, birthday, gender, phone_number } = req.body;
 
@@ -98,6 +162,43 @@ export const getProfile = async (req, res) => {
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: "Internal server error" });
+  }
+};
+
+export const getMyStats = async (req, res) => {
+  const userId = req.userId;
+  const connection = await pool.getConnection();
+
+  try {
+    await syncCompletedAppointments(connection, userId);
+    await ensureReportsTable(connection);
+
+    const [[postStats]] = await connection.query(
+      "SELECT COUNT(*) AS posts FROM posts WHERE user_id = ?",
+      [userId],
+    );
+    const [[appointmentStats]] = await connection.query(
+      "SELECT COUNT(*) AS appointments FROM appointment_completions WHERE user_id = ?",
+      [userId],
+    );
+    const [[reportStats]] = await connection.query(
+      `SELECT COUNT(*) AS reports
+       FROM reports
+       WHERE reporter_id = ?
+         AND created_at >= DATE_SUB(NOW(), INTERVAL 24 HOUR)`,
+      [userId],
+    );
+
+    res.json({
+      posts: Number(postStats.posts) || 0,
+      appointments: Number(appointmentStats.appointments) || 0,
+      reports: Number(reportStats.reports) || 0,
+    });
+  } catch (error) {
+    console.error("User stats lookup failed:", error);
+    res.status(500).json({ message: "user stats lookup failed" });
+  } finally {
+    connection.release();
   }
 };
 

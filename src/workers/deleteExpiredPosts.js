@@ -28,11 +28,14 @@ const getSeoulDateTimeString = (offsetMinutes = 0) => {
     second: "2-digit",
     hour12: false,
   }).formatToParts(date);
-  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  const values = Object.fromEntries(
+    parts.map((part) => [part.type, part.value]),
+  );
   return `${values.year}-${values.month}-${values.day} ${values.hour}:${values.minute}:${values.second}`;
 };
 
-const getSeoulIsoString = () => `${getSeoulDateTimeString().replace(" ", "T")}+09:00`;
+const getSeoulIsoString = () =>
+  `${getSeoulDateTimeString().replace(" ", "T")}+09:00`;
 
 const toSeoulIsoString = (value) => `${String(value).replace(" ", "T")}+09:00`;
 
@@ -44,6 +47,70 @@ const getPostMemberIds = async (connection, postId) => {
     [postId, postId],
   );
   return rows.map((row) => Number(row.user_id)).filter(Boolean);
+};
+
+const ensureAppointmentCompletions = async (connection) => {
+  await connection.query(
+    `CREATE TABLE IF NOT EXISTS appointment_completions (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      user_id INT NOT NULL,
+      post_id INT NOT NULL,
+      completed_at DATETIME NOT NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE KEY uq_appointment_completion (user_id, post_id),
+      INDEX idx_appointment_completions_user_id (user_id),
+      FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
+    )`,
+  );
+};
+
+const recordCompletedAppointments = async (connection, postIds, now) => {
+  if (postIds.length === 0) return;
+
+  await ensureAppointmentCompletions(connection);
+  await connection.query(
+    `INSERT IGNORE INTO appointment_completions (user_id, post_id, completed_at)
+     SELECT member.user_id, p.post_id, TIMESTAMP(p.date, p.time)
+     FROM posts p
+     JOIN (
+       SELECT post_id, user_id FROM posts
+       UNION
+       SELECT post_id, user_id FROM post_participants
+     ) member ON member.post_id = p.post_id
+     WHERE p.post_id IN (?)
+       AND p.date IS NOT NULL
+       AND p.time IS NOT NULL
+       AND TIMESTAMP(p.date, p.time) <= ?`,
+    [postIds, now],
+  );
+};
+
+const recordDueCompletedAppointments = async () => {
+  const now = getSeoulDateTimeString();
+  let connection;
+
+  try {
+    connection = await pool.getConnection();
+    await ensureAppointmentCompletions(connection);
+    await connection.query(
+      `INSERT IGNORE INTO appointment_completions (user_id, post_id, completed_at)
+       SELECT member.user_id, p.post_id, TIMESTAMP(p.date, p.time)
+       FROM posts p
+       JOIN (
+         SELECT post_id, user_id FROM posts
+         UNION
+         SELECT post_id, user_id FROM post_participants
+       ) member ON member.post_id = p.post_id
+       WHERE p.date IS NOT NULL
+         AND p.time IS NOT NULL
+         AND TIMESTAMP(p.date, p.time) <= ?`,
+      [now],
+    );
+  } catch (error) {
+    console.error("Error recording completed appointments:", error);
+  } finally {
+    if (connection) connection.release();
+  }
 };
 
 const emitToPostMembers = async (connection, io, post, eventName, payload) => {
@@ -90,12 +157,18 @@ const sendDeletionWarnings = async (io) => {
 
       const connection = await pool.getConnection();
       try {
-        await emitToPostMembers(connection, io, post, "chat_room_deletion_warning", {
-          roomId,
-          title,
-          deletesAt,
-          message: content,
-        });
+        await emitToPostMembers(
+          connection,
+          io,
+          post,
+          "chat_room_deletion_warning",
+          {
+            roomId,
+            title,
+            deletesAt,
+            message: content,
+          },
+        );
       } finally {
         connection.release();
       }
@@ -132,6 +205,16 @@ const deleteExpiredPosts = async (io) => {
     }
 
     const postIds = expiredPosts.map((post) => post.post_id);
+    const roomIds = postIds.map(String);
+    cloudinaryAssets = await collectCloudinaryAssets(connection, postIds);
+    await recordCompletedAppointments(connection, postIds, now);
+    deletedPosts = await Promise.all(
+      expiredPosts.map(async (post) => ({
+        roomId: String(post.post_id),
+        title: post.title || "약속 게시글",
+        memberIds: await getPostMemberIds(connection, post.post_id),
+      })),
+    );
 
     // Update is_deleted = 1 instead of physical deletion
     await connection.query(
@@ -144,11 +227,12 @@ const deleteExpiredPosts = async (io) => {
     for (const post of expiredPosts) {
       const roomId = String(post.post_id);
       const memberIds = await getPostMemberIds(connection, post.post_id);
-      
+
       const expiredPayload = {
         roomId,
         title: post.title || "약속 게시글",
-        message: "약속 시간이 지나 게시판에서 만료되었습니다. 채팅방은 유지됩니다.",
+        message:
+          "약속 시간이 지나 게시판에서 만료되었습니다. 채팅방은 유지됩니다.",
       };
 
       io.to(roomId).emit("chat_room_expired", expiredPayload);
@@ -167,6 +251,11 @@ const deleteExpiredPosts = async (io) => {
 };
 
 export const startPostDeletionJob = (io) => {
+  cron.schedule("* * * * *", recordDueCompletedAppointments, {
+    scheduled: true,
+    timezone: TIMEZONE,
+  });
+
   cron.schedule("* * * * *", () => sendDeletionWarnings(io), {
     scheduled: true,
     timezone: TIMEZONE,
