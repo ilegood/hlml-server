@@ -35,41 +35,7 @@ const getSeoulDateTimeString = () => {
   return `${values.year}-${values.month}-${values.day} ${values.hour}:${values.minute}:${values.second}`;
 };
 
-const ensureAppointmentCompletions = async (connection) => {
-  await connection.query(
-    `CREATE TABLE IF NOT EXISTS appointment_completions (
-      id INT AUTO_INCREMENT PRIMARY KEY,
-      user_id INT NOT NULL,
-      post_id INT NOT NULL,
-      completed_at DATETIME NOT NULL,
-      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      UNIQUE KEY uq_appointment_completion (user_id, post_id),
-      INDEX idx_appointment_completions_user_id (user_id),
-      FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
-    )`,
-  );
-};
-
-const ensureReportsTable = async (connection) => {
-  await connection.query(
-    `CREATE TABLE IF NOT EXISTS reports (
-      id INT AUTO_INCREMENT PRIMARY KEY,
-      reporter_id INT NOT NULL,
-      target_id INT NOT NULL,
-      reason VARCHAR(100) NOT NULL,
-      content TEXT NOT NULL,
-      status VARCHAR(20) NOT NULL DEFAULT 'pending',
-      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY (reporter_id) REFERENCES users(user_id) ON DELETE CASCADE,
-      FOREIGN KEY (target_id) REFERENCES users(user_id) ON DELETE CASCADE,
-      INDEX idx_reports_reporter_id (reporter_id),
-      INDEX idx_reports_target_id (target_id)
-    )`,
-  );
-};
-
 const syncCompletedAppointments = async (connection, userId) => {
-  await ensureAppointmentCompletions(connection);
   await connection.query(
     `INSERT IGNORE INTO appointment_completions (user_id, post_id, completed_at)
      SELECT ?, p.post_id, TIMESTAMP(p.date, p.time)
@@ -170,8 +136,6 @@ export const getMyStats = async (req, res) => {
 
   try {
     await syncCompletedAppointments(connection, userId);
-    await ensureReportsTable(connection);
-
     const [[postStats]] = await connection.query(
       "SELECT COUNT(*) AS posts FROM posts WHERE user_id = ?",
       [userId],

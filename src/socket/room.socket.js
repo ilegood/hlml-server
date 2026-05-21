@@ -84,7 +84,18 @@ export const registerRoomSocket = (io, socket) => {
         }
 
         const [roomRows] = await query(
-          `SELECT p.title, p.image, p.place, p.latitude, p.longitude, u.nickname AS author
+          `SELECT
+             p.title,
+             p.image,
+             p.date,
+             p.time,
+             p.place,
+             p.latitude,
+             p.longitude,
+             p.capacity,
+             p.participants,
+             p.status,
+             u.nickname AS author
            FROM posts p
            JOIN users u ON p.user_id = u.user_id
            WHERE p.post_id = ?`,
@@ -96,9 +107,14 @@ export const registerRoomSocket = (io, socket) => {
             title: roomRows[0].title,
             image: roomRows[0].image,
             author: roomRows[0].author,
+            date: roomRows[0].date,
+            time: roomRows[0].time,
             place: roomRows[0].place,
             latitude: roomRows[0].latitude,
             longitude: roomRows[0].longitude,
+            capacity: roomRows[0].capacity,
+            participants: roomRows[0].participants,
+            status: roomRows[0].status,
             isDM: false,
           });
         }

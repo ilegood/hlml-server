@@ -136,25 +136,9 @@ const getPostMemberIds = async (connection, postId) => {
   return rows.map((row) => Number(row.user_id)).filter(Boolean);
 };
 
-const ensureAppointmentCompletions = async (connection) => {
-  await connection.query(
-    `CREATE TABLE IF NOT EXISTS appointment_completions (
-      id INT AUTO_INCREMENT PRIMARY KEY,
-      user_id INT NOT NULL,
-      post_id INT NOT NULL,
-      completed_at DATETIME NOT NULL,
-      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      UNIQUE KEY uq_appointment_completion (user_id, post_id),
-      INDEX idx_appointment_completions_user_id (user_id),
-      FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
-    )`,
-  );
-};
-
 const recordCompletedAppointments = async (connection, postIds, now) => {
   if (postIds.length === 0) return;
 
-  await ensureAppointmentCompletions(connection);
   await connection.query(
     `INSERT IGNORE INTO appointment_completions (user_id, post_id, completed_at)
      SELECT member.user_id, p.post_id, TIMESTAMP(p.date, p.time)
@@ -178,7 +162,6 @@ const recordDueCompletedAppointments = async () => {
 
   try {
     connection = await pool.getConnection();
-    await ensureAppointmentCompletions(connection);
     await connection.query(
       `INSERT IGNORE INTO appointment_completions (user_id, post_id, completed_at)
        SELECT member.user_id, p.post_id, TIMESTAMP(p.date, p.time)
