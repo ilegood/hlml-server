@@ -12,6 +12,7 @@ import {
   updateUserProfile,
   searchUsers,
   deleteUserById,
+  findUserStats,
 } from "../repositories/userRepository.js";
 import {
   getJoinedPostsForUser,
@@ -173,6 +174,16 @@ export const searchUsersController = async (req, res) => {
   try {
     const users = await searchUsers(q, myId);
     res.json(users);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Internal server error" });
+  }
+};
+
+export const getUserStats = async (req, res) => {
+  try {
+    const stats = await findUserStats(req.userId);
+    res.json(stats || { posts: 0, appointments: 0, reports: 0 });
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: "Internal server error" });
