@@ -18,6 +18,9 @@ import { registerChatSocket } from "./socket/chat.socket.js";
 import { startAppointmentReminderJob } from "./workers/appointmentReminders.js";
 import { startPostDeletionJob } from "./workers/deleteExpiredPosts.js";
 
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
 const ensureMissingColumns = async () => {
   const tables = [
     { table: "posts", column: "is_deleted", type: "BOOLEAN DEFAULT FALSE" },
@@ -66,11 +69,6 @@ const ensureMissingColumns = async () => {
     }
   }
 };
-import path from "path";
-import { fileURLToPath } from "url";
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
 
 export const createApp = () => {
   const app = express();
@@ -121,6 +119,7 @@ export const createServer = (app = createApp()) => {
 };
 
 export const startServer = async () => {
+  await ensureMissingColumns();
   await ensureRuntimeSchema();
 
   const { server, io } = createServer();
@@ -145,11 +144,3 @@ if (isDirectRun) {
     process.exit(1);
   });
 }
-ensureMissingColumns().then(() => {
-  startAppointmentReminderJob(io);
-  startPostDeletionJob(io);
-
-  server.listen(env.port, () => {
-    console.log(`Server running on ${env.port}`);
-  });
-});

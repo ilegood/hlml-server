@@ -211,12 +211,13 @@ export const getPostWithDetails = async (id, viewerId = null) => {
   );
 };
 
-export const getPosts = async (viewerId = null) => {
+export const getPosts = async (viewerId = null, options = {}) => {
   await ensurePostColumns();
+  const { visibleOnly = false } = options;
   const blockedUserIds = await getBlockedUserIds(viewerId);
   const authorJoin = "JOIN users u ON p.user_id = u.user_id";
   const postSelect = "p.*";
-  const whereClauses = [];
+  const whereClauses = ["p.is_deleted = 0"];
   const params = [];
 
   if (visibleOnly) {
@@ -275,8 +276,7 @@ export const getPosts = async (viewerId = null) => {
         LEFT JOIN users u ON c.user_id = u.user_id
         GROUP BY c.post_id
       ) ca ON p.post_id = ca.post_id
-     ${whereClauses.length > 0 ? `WHERE ${whereClauses.join(" AND ")}` : ""}
-     WHERE p.is_deleted = 0
+     WHERE ${whereClauses.join(" AND ")}
      ORDER BY p.created_at DESC`,
     params,
   );
@@ -541,45 +541,18 @@ export const toggleJoinPost = async (userId, postId) => {
   const post = await getPost(postId);
   if (!post) return null;
   if (String(post.user_id) === String(userId)) {
-    return { post: await getPostWithDetails(postId, userId) };
+    return getPostWithDetails(postId, userId);
   }
-
-  const [[user]] = await pool.query(
-    "SELECT nickname FROM users WHERE user_id = ?",
-    [userId],
-  );
 
   const [[existing]] = await pool.query(
     "SELECT id FROM post_participants WHERE user_id=? AND post_id=?",
     [userId, postId],
   );
 
-  let systemMessage = null;
-
   if (existing) {
     const wasFull = (post.participants || 1) >= (post.capacity || 2);
     await pool.query("DELETE FROM post_participants WHERE id=?", [existing.id]);
     await syncPostParticipantState(postId, post.capacity, post.status, wasFull);
-
-    await pool.query(
-      "DELETE FROM messages WHERE room_id = ? AND user_id = ? AND is_system = 1 AND content = ?",
-      [postId, userId, `${user.nickname}님이 들어왔습니다.`],
-    );
-
-    const leaveMsgContent = `${user.nickname}님이 퇴장하셨습니다.`;
-    const [msgResult] = await pool.query(
-      "INSERT INTO messages (room_id, user_id, nickname, content, is_system) VALUES (?, ?, ?, ?, ?)",
-      [postId, userId, "System", leaveMsgContent, 1],
-    );
-    systemMessage = {
-      id: msgResult.insertId,
-      room_id: String(postId),
-      user_id: userId,
-      nickname: "System",
-      content: leaveMsgContent,
-      is_system: 1,
-      created_at: new Date().toISOString(),
-    };
   } else {
     if (post.status === STATUS_CLOSED) {
       const error = new Error("recruitment is closed");
@@ -615,34 +588,9 @@ export const toggleJoinPost = async (userId, postId) => {
       [userId, postId],
     );
     await syncPostParticipantState(postId, post.capacity, post.status, false);
-
-    const joinMsgContent = `${user.nickname}님이 들어왔습니다.`;
-    const [[alreadyJoined]] = await pool.query(
-      "SELECT id FROM messages WHERE room_id = ? AND user_id = ? AND is_system = 1 AND content = ?",
-      [String(postId), userId, joinMsgContent],
-    );
-
-    if (!alreadyJoined) {
-      const [msgResult] = await pool.query(
-        "INSERT INTO messages (room_id, user_id, nickname, content, is_system) VALUES (?, ?, ?, ?, ?)",
-        [postId, userId, "System", joinMsgContent, 1],
-      );
-      systemMessage = {
-        id: msgResult.insertId,
-        room_id: String(postId),
-        user_id: userId,
-        nickname: "System",
-        content: joinMsgContent,
-        is_system: 1,
-        created_at: new Date().toISOString(),
-      };
-    }
   }
 
-  return {
-    post: await getPostWithDetails(postId),
-    systemMessage,
-  };
+  return getPostWithDetails(postId);
 };
 
 export const leavePost = async (userId, postId) => {
@@ -691,31 +639,13 @@ export const leavePost = async (userId, postId) => {
   const wasFull = (post.participants || 1) >= (post.capacity || 2);
   await syncPostParticipantState(postId, post.capacity, post.status, wasFull);
 
+  const leaveMsgContent = `${user.nickname}\ub2d8\uc774 \ud1f4\uc7a5\ud558\uc168\uc2b5\ub2c8\ub2e4.`;
   await pool.query(
-    "DELETE FROM messages WHERE room_id = ? AND user_id = ? AND is_system = 1 AND content = ?",
-    [postId, userId, `${user.nickname}님이 들어왔습니다.`],
-  );
-
-  const leaveMsgContent = `${user.nickname}님이 퇴장하셨습니다.`;
-  const [msgResult] = await pool.query(
     "INSERT INTO messages (room_id, user_id, nickname, content, is_system) VALUES (?, ?, ?, ?, ?)",
     [postId, userId, "System", leaveMsgContent, 1],
   );
 
-  const systemMessage = {
-    id: msgResult.insertId,
-    room_id: String(postId),
-    user_id: userId,
-    nickname: "System",
-    content: leaveMsgContent,
-    is_system: 1,
-    created_at: new Date().toISOString(),
-  };
-
-  return {
-    post: await getPostWithDetails(postId),
-    systemMessage,
-  };
+  return getPostWithDetails(postId);
 };
 
 // comments
