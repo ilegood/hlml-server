@@ -119,6 +119,7 @@ const mapPostRow = (
       text: isBlockedComment
         ? "\ucc28\ub2e8\ud55c \uc0ac\ub78c\uc758 \uba54\uc2dc\uc9c0\uc785\ub2c8\ub2e4"
         : row.content,
+      image: row.image,
       authorNickname,
       createdAt: row.created_at,
       edited: Boolean(row.edited),
@@ -576,7 +577,15 @@ export const getComments = async (postId, viewerId = null) => {
   );
 };
 
+const ensureCommentImageColumn = async () => {
+  const [columns] = await pool.query("SHOW COLUMNS FROM comments LIKE 'image'");
+  if (columns.length === 0) {
+    await pool.query("ALTER TABLE comments ADD COLUMN image VARCHAR(500) DEFAULT NULL");
+  }
+};
+
 export const createComment = async (data) => {
+  await ensureCommentImageColumn();
   const parentId = data.parent_id || null;
 
   if (parentId) {
@@ -593,8 +602,8 @@ export const createComment = async (data) => {
   }
 
   return pool.query(
-    "INSERT INTO comments (post_id, user_id, content, parent_id) VALUES (?, ?, ?, ?)",
-    [data.postId, data.userId, data.content, parentId],
+    "INSERT INTO comments (post_id, user_id, content, parent_id, image) VALUES (?, ?, ?, ?, ?)",
+    [data.postId, data.userId, data.content, parentId, data.image],
   );
 };
 
