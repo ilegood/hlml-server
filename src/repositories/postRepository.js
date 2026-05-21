@@ -372,11 +372,36 @@ export const updatePost = async (id, userId, data) => {
 };
 
 export const deletePost = async (id, userId) => {
-  const [result] = await pool.query(
-    "DELETE FROM posts WHERE post_id=? AND user_id=?",
-    [id, userId],
-  );
-  return result.affectedRows;
+  const connection = await pool.getConnection();
+  try {
+    await connection.beginTransaction();
+
+    const [[post]] = await connection.query(
+      "SELECT post_id FROM posts WHERE post_id=? AND user_id=?",
+      [id, userId],
+    );
+
+    if (!post) {
+      await connection.rollback();
+      return 0;
+    }
+
+    // Delete associated messages (post room messages use post_id as room_id)
+    await connection.query("DELETE FROM messages WHERE room_id = ?", [id]);
+
+    const [result] = await connection.query(
+      "DELETE FROM posts WHERE post_id=? AND user_id=?",
+      [id, userId],
+    );
+
+    await connection.commit();
+    return result.affectedRows;
+  } catch (error) {
+    await connection.rollback();
+    throw error;
+  } finally {
+    connection.release();
+  }
 };
 
 export const getJoinedPostsForUser = async (userId, connection) => {
