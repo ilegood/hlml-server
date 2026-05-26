@@ -7,6 +7,7 @@ import {
   getProfile,
   getMyStats,
   getUserPublicProfile,
+  getUserActivity,
   updateProfile,
   searchUsersController,
   deleteUserController,
@@ -23,6 +24,7 @@ router.get("/me/stats", auth, getUserStats);
 router.get("/search", auth, searchUsersController);
 router.patch("/profile", auth, upload.single("profile_img"), updateProfile);
 router.delete("/", auth, deleteUserController);
+router.get("/:id/activity", auth, getUserActivity);
 router.get("/:id", auth, getUserPublicProfile);
 
 export default router;

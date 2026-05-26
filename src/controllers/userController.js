@@ -255,6 +255,122 @@ export const getUserStats = async (req, res) => {
   }
 };
 
+export const getUserActivity = async (req, res) => {
+  const targetUserId = Number(req.params.id);
+
+  if (!Number.isFinite(targetUserId)) {
+    return res.status(400).json({ message: "Invalid user id" });
+  }
+
+  try {
+    const [userRows] = await pool.query(
+      "SELECT user_id, nickname, bio, profile_img FROM users WHERE user_id = ? AND is_deleted = FALSE",
+      [targetUserId],
+    );
+
+    const user = userRows[0];
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    const [[postStats]] = await pool.query(
+      "SELECT COUNT(*) AS posts FROM posts WHERE user_id = ? AND is_deleted = 0",
+      [targetUserId],
+    );
+
+    const [[appointmentStats]] = await pool.query(
+      "SELECT COUNT(*) AS appointments FROM appointment_completions WHERE user_id = ?",
+      [targetUserId],
+    );
+
+    const [[reportStats]] = await pool.query(
+      `SELECT COUNT(*) AS reports
+       FROM reports
+       WHERE target_id = ?
+         AND created_at >= DATE_SUB(NOW(), INTERVAL 24 HOUR)`,
+      [targetUserId],
+    );
+
+    const [postRows] = await pool.query(
+      `SELECT
+         p.post_id,
+         p.title,
+         p.content,
+         p.date,
+         p.time,
+         p.place,
+         p.capacity,
+         p.participants,
+         p.status,
+         p.image,
+         p.created_at,
+         p.categories
+       FROM posts p
+       WHERE p.user_id = ? AND p.is_deleted = 0
+       ORDER BY p.created_at DESC
+       LIMIT 20`,
+      [targetUserId],
+    );
+
+    const [appointmentRows] = await pool.query(
+      `SELECT
+         ac.id,
+         ac.post_id,
+         ac.completed_at,
+         p.title,
+         p.date,
+         p.time,
+         p.place,
+         p.image,
+         p.status
+       FROM appointment_completions ac
+       JOIN posts p ON p.post_id = ac.post_id
+       WHERE ac.user_id = ?
+       ORDER BY ac.completed_at DESC
+       LIMIT 20`,
+      [targetUserId],
+    );
+
+    const [reportRows] = await pool.query(
+      `SELECT
+         r.id,
+         r.report_type,
+         r.target_post_id,
+         r.target_comment_id,
+         r.target_title,
+         r.target_excerpt,
+         r.reason,
+         r.content,
+         r.status,
+         r.created_at,
+         u.nickname AS reporter_nickname,
+         u.profile_img AS reporter_profile_img
+       FROM reports r
+       JOIN users u ON u.user_id = r.reporter_id
+       WHERE r.target_id = ?
+         AND r.created_at >= DATE_SUB(NOW(), INTERVAL 24 HOUR)
+       ORDER BY r.created_at DESC
+       LIMIT 20`,
+      [targetUserId],
+    );
+
+    res.json({
+      profile: user,
+      stats: {
+        posts: Number(postStats.posts) || 0,
+        appointments: Number(appointmentStats.appointments) || 0,
+        reports: Number(reportStats.reports) || 0,
+      },
+      posts: postRows,
+      appointments: appointmentRows,
+      reports: reportRows,
+    });
+  } catch (error) {
+    console.error("User activity lookup failed:", error);
+    res.status(500).json({ message: "user activity lookup failed" });
+  }
+};
+
 export const deleteUserController = async (req, res) => {
   const connection = await pool.getConnection();
   await connection.beginTransaction();

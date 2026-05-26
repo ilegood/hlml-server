@@ -1092,6 +1092,11 @@ router.post("/share", auth, async (req, res) => {
       return res.status(403).json({ message: "blocked user" });
     }
 
+    const post = await getPost(postId);
+    if (!post) {
+      return res.status(404).json({ message: "Post not found" });
+    }
+
     const u1 = Math.min(myId, targetId);
     const u2 = Math.max(myId, targetId);
     const [[existing]] = await query(
@@ -1116,7 +1121,8 @@ router.post("/share", auth, async (req, res) => {
     const content = JSON.stringify({
       kind: "share_post",
       postId,
-      postTitle: postTitle || "게시글",
+      postTitle: post.title || "게시글",
+      postImage: post.image || null,
       sharerNickname: myInfo?.nickname || "알 수 없음",
     });
 
