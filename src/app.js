@@ -46,6 +46,14 @@ registerChatSocket(io);
 startAppointmentReminderJob(io);
 startPostDeletionJob(io);
 
+// Global Error Handler
+app.use((err, req, res, next) => {
+  console.error(err.stack);
+  const status = err.status || 500;
+  const message = err.message || "Internal Server Error";
+  res.status(status).json({ message });
+});
+
 server.listen(env.port, () => {
   console.log(`Server running on ${env.port}`);
 });

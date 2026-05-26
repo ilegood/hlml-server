@@ -1,7 +1,7 @@
 import jwt from "jsonwebtoken";
 import { env } from "../config/env.js";
 
-const authMiddleware = (req, res, next) => {
+export const auth = (req, res, next) => {
   try {
     const authHeader = req.headers.authorization;
     if (!authHeader) {
@@ -30,4 +30,22 @@ const authMiddleware = (req, res, next) => {
   }
 };
 
-export default authMiddleware;
+export const optionalAuth = (req, res, next) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader) return next();
+
+  try {
+    const token = authHeader.startsWith("Bearer ")
+      ? authHeader.slice(7).trim()
+      : authHeader.trim();
+    if (token) {
+      const decoded = jwt.verify(token, env.jwtSecret);
+      req.userId = decoded.userId ?? decoded.user_id ?? decoded.sub;
+    }
+  } catch {
+    req.userId = null;
+  }
+  next();
+};
+
+export default auth;

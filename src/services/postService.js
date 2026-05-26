@@ -1,4 +1,5 @@
 import * as repo from "../repositories/postRepository.js";
+import { STATUS_OPEN, STATUS_CLOSED } from "../config/constants.js";
 
 const normalizeCategories = (categories) => {
   if (categories === undefined || categories === null || categories === "") {
@@ -71,9 +72,9 @@ const normalizeFloatOrNull = (value) => {
 };
 
 const normalizeStatus = (status) => {
-  return String(status || "").trim() === "\ubaa8\uc9d1\uc644\ub8cc"
-    ? "\ubaa8\uc9d1\uc644\ub8cc"
-    : "\ubaa8\uc9d1\uc911";
+  return String(status || "").trim() === STATUS_CLOSED
+    ? STATUS_CLOSED
+    : STATUS_OPEN;
 };
 
 const normalizePostData = (body) => {

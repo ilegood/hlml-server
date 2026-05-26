@@ -1,6 +1,7 @@
 import { query } from "../db.js";
 import { toUtcIsoString } from "../utils/time.js";
 import { parseJsonArray, toInt } from "./utils.js";
+import { STATUS_OPEN, STATUS_CLOSED } from "../config/constants.js";
 
 const formatMessageRows = (rows) =>
   rows.map((row) => ({
@@ -178,19 +179,12 @@ export const registerRoomSocket = (io, socket) => {
 
       try {
         const [[post]] = await query(
-          `SELECT p.post_id, u.nickname AS author
-           FROM posts p
-           JOIN users u ON p.user_id = u.user_id
-           WHERE p.post_id = ?`,
+          "SELECT user_id FROM posts WHERE post_id = ?",
           [roomIdInt],
         );
-        const [[user]] = await query(
-          "SELECT nickname FROM users WHERE user_id = ?",
-          [myUserIdInt],
-        );
 
-        if (!post || !user || post.author !== user.nickname) {
-          socket.emit("error_message", "Only the room owner can kick users.");
+        if (!post || Number(post.user_id) !== myUserIdInt) {
+          socket.emit("error_message", "방장만 강퇴할 수 있습니다.");
           return;
         }
 
@@ -214,16 +208,16 @@ export const registerRoomSocket = (io, socket) => {
         const wasFull =
           (postCapacity?.participants || 1) >= (postCapacity?.capacity || 2);
         const status =
-          (postCapacity?.status === "\ubaa8\uc9d1\uc644\ub8cc" && !wasFull) ||
+          (postCapacity?.status === STATUS_CLOSED && !wasFull) ||
           participants >= (postCapacity?.capacity || 2)
-            ? "\ubaa8\uc9d1\uc644\ub8cc"
-            : "\ubaa8\uc9d1\uc911";
+            ? STATUS_CLOSED
+            : STATUS_OPEN;
         await query(
           "UPDATE posts SET participants = ?, status = ? WHERE post_id = ?",
           [participants, status, roomIdInt],
         );
 
-        const kickMsgContent = `${targetNickname}\ub2d8\uc774 \uac15\ud1f4\ub418\uc5c8\uc2b5\ub2c8\ub2e4.`;
+        const kickMsgContent = `${targetNickname}님이 강퇴되었습니다.`;
         const message = await saveSystemMessage({
           roomId: roomStr,
           userId: targetUserIdInt,

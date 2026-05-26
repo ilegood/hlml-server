@@ -1,5 +1,8 @@
 import pool from "../db.js";
 import { toInt } from "./utils.js";
+import { STATUS_OPEN, STATUS_CLOSED } from "../config/constants.js";
+
+const DELETED_MESSAGE_CONTENT = "삭제된 메시지입니다.";
 
 const getRoomMemberIds = async (roomStr) => {
   if (roomStr.startsWith("dm_")) {
@@ -142,7 +145,7 @@ export const registerMessageSocket = (io, socket) => {
         `UPDATE messages
          SET is_deleted = 1, content = ?
          WHERE id = ? AND room_id = ? AND user_id = ?`,
-        ["\uc0ad\uc81c\ub41c \uba54\uc2dc\uc9c0\uc785\ub2c8\ub2e4.", messageId, roomStr, userIdInt],
+        [DELETED_MESSAGE_CONTENT, messageId, roomStr, userIdInt],
       );
       if (result.affectedRows === 0) return;
 

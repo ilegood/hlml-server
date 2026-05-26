@@ -1,7 +1,5 @@
 import pool from "../db.js";
-
-const STATUS_OPEN = "\ubaa8\uc9d1\uc911";
-const STATUS_CLOSED = "\ubaa8\uc9d1\uc644\ub8cc";
+import { STATUS_OPEN, STATUS_CLOSED } from "../config/constants.js";
 
 const parseJsonArray = (value) => {
   if (!value) return [];
@@ -21,8 +19,6 @@ const toTimestamp = (value) => {
   const timestamp = new Date(value).getTime();
   return Number.isNaN(timestamp) ? 0 : timestamp;
 };
-
-
 
 const getUserNickname = async (userId) => {
   const [[user]] = await pool.query(
@@ -94,13 +90,13 @@ const mapPostRow = (
   sortedComments.forEach((row) => {
     const isBlockedComment = blockedUserIds.has(Number(row.user_id));
     const authorNickname = isBlockedComment
-      ? "\ucc28\ub2e8\ud55c \uc0ac\uc6a9\uc790"
+      ? "차단한 사용자"
       : row.nickname || "Anonymous";
     const item = {
       id: row.id,
       userId: row.user_id,
       text: isBlockedComment
-        ? "\ucc28\ub2e8\ud55c \uc0ac\ub78c\uc758 \uba54\uc2dc\uc9c0\uc785\ub2c8\ub2e4"
+        ? "차단한 사람의 메시지입니다"
         : row.content,
       image: row.image,
       authorNickname,
@@ -280,8 +276,6 @@ export const getPost = async (id) => {
 };
 
 export const createPost = async (data) => {
-
-
   const [result] = await pool.query(
     `INSERT INTO posts
     (title, content, date, time, place, latitude, longitude, capacity, status, user_id, categories, image)
@@ -439,7 +433,6 @@ export const toggleJoinPost = async (userId, postId) => {
       throw error;
     }
 
-    // Blocked users cannot rejoin a post room.
     const [banRows] = await pool.query(
       "SELECT id FROM post_bans WHERE post_id = ? AND user_id = ?",
       [postId, userId],
@@ -476,7 +469,6 @@ export const leavePost = async (userId, postId) => {
   const post = await getPost(postId);
   if (!post) return null;
 
-  // Load the user nickname for ownership and system messages.
   const [[user]] = await pool.query(
     "SELECT nickname FROM users WHERE user_id = ?",
     [userId],
@@ -486,7 +478,6 @@ export const leavePost = async (userId, postId) => {
   const isAuthor = post.author === user.nickname;
 
   if (isAuthor) {
-    // If the owner leaves, transfer ownership to the first participant.
     const [[nextParticipant]] = await pool.query(
       `SELECT pp.user_id, u.nickname 
        FROM post_participants pp
@@ -505,8 +496,6 @@ export const leavePost = async (userId, postId) => {
         "DELETE FROM post_participants WHERE post_id = ? AND user_id = ?",
         [postId, nextParticipant.user_id],
       );
-    } else {
-      // No participant is available to receive ownership.
     }
   } else {
     await pool.query(
@@ -518,7 +507,7 @@ export const leavePost = async (userId, postId) => {
   const wasFull = (post.participants || 1) >= (post.capacity || 2);
   await syncPostParticipantState(postId, post.capacity, post.status, wasFull);
 
-  const leaveMsgContent = `${user.nickname}\ub2d8\uc774 \ud1f4\uc7a5\ud558\uc168\uc2b5\ub2c8\ub2e4.`;
+  const leaveMsgContent = `${user.nickname}님이 퇴장하셨습니다.`;
   await pool.query(
     "INSERT INTO messages (room_id, user_id, nickname, content, is_system) VALUES (?, ?, ?, ?, ?)",
     [postId, userId, "System", leaveMsgContent, 1],
@@ -527,7 +516,6 @@ export const leavePost = async (userId, postId) => {
   return getPostWithDetails(postId);
 };
 
-// comments
 export const getComments = async (postId, viewerId = null) => {
   const blockedUserIds = await getBlockedUserIds(viewerId);
   const [rows] = await pool.query(
@@ -541,23 +529,14 @@ export const getComments = async (postId, viewerId = null) => {
     blockedUserIds.has(Number(row.user_id))
       ? {
           ...row,
-          nickname: "\ucc28\ub2e8\ud55c \uc0ac\uc6a9\uc790",
-          content:
-            "\ucc28\ub2e8\ud55c \uc0ac\ub78c\uc758 \uba54\uc2dc\uc9c0\uc785\ub2c8\ub2e4",
+          nickname: "차단한 사용자",
+          content: "차단한 사람의 메시지입니다",
         }
       : row,
   );
 };
 
-const ensureCommentImageColumn = async () => {
-  const [columns] = await pool.query("SHOW COLUMNS FROM comments LIKE 'image'");
-  if (columns.length === 0) {
-    await pool.query("ALTER TABLE comments ADD COLUMN image VARCHAR(500) DEFAULT NULL");
-  }
-};
-
 export const createComment = async (data) => {
-  await ensureCommentImageColumn();
   const parentId = data.parent_id || null;
 
   if (parentId) {
@@ -592,7 +571,6 @@ export const deleteComment = (id, userId) =>
     userId,
   ]);
 
-// bans
 export const getKickedPostsForUser = async (userId) => {
   const [rows] = await pool.query(
     `SELECT p.* 
