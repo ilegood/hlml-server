@@ -5,6 +5,7 @@ import net from "net";
 import pool, { query } from "../db.js";
 import auth from "../middleware/auth.js";
 import { cloudinary } from "../middleware/cloudinary.js";
+import { getPost } from "../repositories/postRepository.js";
 import { toUtcIsoString } from "../utils/time.js";
 
 const router = express.Router();
@@ -1143,7 +1144,7 @@ router.post("/share", auth, async (req, res) => {
       created_at: new Date().toISOString(),
     });
 
-    res.json({ success: true });
+    res.json({ success: true, roomId });
   } catch (err) {
     console.error("Share failed:", err);
     res.status(500).json({ message: "게시글 공유에 실패했습니다." });
