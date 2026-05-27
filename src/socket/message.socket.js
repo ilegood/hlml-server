@@ -205,6 +205,18 @@ export const registerMessageSocket = (io, socket) => {
     }
   });
 
+  socket.on("typing", ({ roomId, nickname }) => {
+    const roomStr = String(roomId);
+    if (!roomStr) return;
+    socket.to(roomStr).emit("typing", { nickname });
+  });
+
+  socket.on("stop_typing", ({ roomId }) => {
+    const roomStr = String(roomId);
+    if (!roomStr) return;
+    socket.to(roomStr).emit("stop_typing");
+  });
+
   socket.on("mark_read", async ({ messageId, userId, roomId }) => {
     const roomStr = String(roomId);
     const userIdInt = toInt(socket.data.userId) || toInt(userId);

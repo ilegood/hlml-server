@@ -121,17 +121,27 @@ export const registerRoomSocket = (io, socket) => {
 
         if (nickname && userIdInt) {
           const joinMsgContent = `${nickname}님이 들어왔습니다.`;
-          const [existing] = await query(
-            "SELECT id FROM messages WHERE room_id = ? AND user_id = ? AND is_system = 1 AND content = ?",
-            [roomStr, userIdInt, joinMsgContent],
+          const [result] = await query(
+            `INSERT INTO messages (room_id, user_id, nickname, content, is_system)
+             SELECT ?, ?, ?, ?, ?
+             FROM DUAL
+             WHERE NOT EXISTS (
+               SELECT 1 FROM messages
+               WHERE room_id = ? AND user_id = ? AND is_system = 1 AND content = ?
+             )`,
+            [roomStr, userIdInt, "System", joinMsgContent, 1, roomStr, userIdInt, joinMsgContent],
           );
 
-          if (existing.length === 0) {
-            const message = await saveSystemMessage({
-              roomId: roomStr,
+          if (result.affectedRows > 0) {
+            const message = {
+              id: result.insertId,
+              roomId: String(roomStr),
               userId: userIdInt,
+              nickname: "System",
               content: joinMsgContent,
-            });
+              isSystem: true,
+              created_at: new Date().toISOString(),
+            };
 
             io.to(roomStr).emit("receive_message", message);
 
