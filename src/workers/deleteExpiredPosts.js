@@ -41,9 +41,15 @@ const toSeoulIsoString = (value) => `${String(value).replace(" ", "T")}+09:00`;
 
 const getPostMemberIds = async (connection, postId) => {
   const [rows] = await connection.query(
-    `SELECT user_id FROM posts WHERE post_id = ?
+    `SELECT p.user_id
+     FROM posts p
+     JOIN users u ON u.user_id = p.user_id
+     WHERE p.post_id = ? AND p.is_deleted = 0 AND u.is_deleted = FALSE
      UNION
-     SELECT user_id FROM post_participants WHERE post_id = ?`,
+     SELECT pp.user_id
+     FROM post_participants pp
+     JOIN users u ON u.user_id = pp.user_id
+     WHERE pp.post_id = ? AND u.is_deleted = FALSE`,
     [postId, postId],
   );
   return rows.map((row) => Number(row.user_id)).filter(Boolean);
@@ -57,11 +63,16 @@ const recordCompletedAppointments = async (connection, postIds, now) => {
      SELECT member.user_id, p.post_id, TIMESTAMP(p.date, p.time)
      FROM posts p
      JOIN (
-       SELECT post_id, user_id FROM posts
+       SELECT p2.post_id, p2.user_id
+       FROM posts p2
+       JOIN users u ON u.user_id = p2.user_id AND u.is_deleted = FALSE
        UNION
-       SELECT post_id, user_id FROM post_participants
+       SELECT pp.post_id, pp.user_id
+       FROM post_participants pp
+       JOIN users u ON u.user_id = pp.user_id AND u.is_deleted = FALSE
      ) member ON member.post_id = p.post_id
      WHERE p.post_id IN (?)
+       AND p.is_deleted = 0
        AND p.date IS NOT NULL
        AND p.time IS NOT NULL
        AND TIMESTAMP(p.date, p.time) <= ?`,
@@ -80,11 +91,16 @@ const recordDueCompletedAppointments = async () => {
        SELECT member.user_id, p.post_id, TIMESTAMP(p.date, p.time)
        FROM posts p
        JOIN (
-         SELECT post_id, user_id FROM posts
+         SELECT p2.post_id, p2.user_id
+         FROM posts p2
+         JOIN users u ON u.user_id = p2.user_id AND u.is_deleted = FALSE
          UNION
-         SELECT post_id, user_id FROM post_participants
+         SELECT pp.post_id, pp.user_id
+         FROM post_participants pp
+         JOIN users u ON u.user_id = pp.user_id AND u.is_deleted = FALSE
        ) member ON member.post_id = p.post_id
        WHERE p.date IS NOT NULL
+         AND p.is_deleted = 0
          AND p.time IS NOT NULL
          AND TIMESTAMP(p.date, p.time) <= ?`,
       [now],
@@ -112,9 +128,11 @@ const sendDeletionWarnings = async (io) => {
 
   try {
     const [posts] = await pool.query(
-      `SELECT post_id, title, ${expirationDeadlineSql} AS deletes_at
-       FROM posts
-       WHERE date IS NOT NULL
+      `SELECT p.post_id, p.title, ${expirationDeadlineSql} AS deletes_at
+       FROM posts p
+       JOIN users u ON u.user_id = p.user_id AND u.is_deleted = FALSE
+       WHERE p.date IS NOT NULL
+         AND p.is_deleted = 0
          AND ${expirationDeadlineSql} >= ?
          AND ${expirationDeadlineSql} < ?`,
       [warningStart, warningEnd],
@@ -174,10 +192,11 @@ const deleteExpiredPosts = async (io) => {
     await connection.beginTransaction();
 
     const [expiredPosts] = await connection.query(
-      `SELECT post_id, title
-       FROM posts
-       WHERE date IS NOT NULL
-         AND is_deleted = 0
+      `SELECT p.post_id, p.title
+       FROM posts p
+       JOIN users u ON u.user_id = p.user_id AND u.is_deleted = FALSE
+       WHERE p.date IS NOT NULL
+         AND p.is_deleted = 0
          AND ${expirationDeadlineSql} <= ?`,
       [now],
     );

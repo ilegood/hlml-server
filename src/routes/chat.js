@@ -640,7 +640,8 @@ router.get("/rooms/:roomId/block-warning", auth, async (req, res) => {
       `SELECT u.user_id AS id, u.nickname
        FROM user_relations r
        JOIN users u ON u.user_id = r.target_id
-       WHERE r.requester_id = ? AND r.status = 'blocked'`,
+       WHERE r.requester_id = ? AND r.status = 'blocked'
+         AND u.is_deleted = FALSE`,
       [myId],
     );
 
@@ -649,12 +650,15 @@ router.get("/rooms/:roomId/block-warning", auth, async (req, res) => {
     }
 
     const [postCreatorRows] = await query(
-      "SELECT user_id AS id FROM posts WHERE post_id = ?",
+      "SELECT user_id AS id FROM posts WHERE post_id = ? AND is_deleted = 0",
       [roomId],
     );
 
     const [postParticipantsRows] = await query(
-      "SELECT user_id AS id FROM post_participants WHERE post_id = ?",
+      `SELECT pp.user_id AS id
+       FROM post_participants pp
+       JOIN users u ON u.user_id = pp.user_id
+       WHERE pp.post_id = ? AND u.is_deleted = FALSE`,
       [roomId],
     );
 
@@ -709,8 +713,10 @@ const getMyGroupRooms = async (userId) => {
        p.date,
        p.time
      FROM posts p
+     JOIN users u ON u.user_id = p.user_id AND u.is_deleted = FALSE
      LEFT JOIN post_participants pp ON pp.post_id = p.post_id
-     WHERE p.user_id = ? OR pp.user_id = ?`,
+     WHERE p.is_deleted = 0
+       AND (p.user_id = ? OR pp.user_id = ?)`,
     [userId, userId],
   );
 
@@ -730,7 +736,8 @@ const getMyDmRooms = async (userId) => {
      JOIN users u
        ON (dr.user1_id = ? AND dr.user2_id = u.user_id)
        OR (dr.user2_id = ? AND dr.user1_id = u.user_id)
-     WHERE dr.user1_id = ? OR dr.user2_id = ?`,
+     WHERE (dr.user1_id = ? OR dr.user2_id = ?)
+       AND u.is_deleted = FALSE`,
     [userId, userId, userId, userId],
   );
 
@@ -774,8 +781,10 @@ const getAppointmentReminders = async (userId) => {
        p.time,
        p.place
      FROM posts p
+     JOIN users u ON u.user_id = p.user_id AND u.is_deleted = FALSE
      LEFT JOIN post_participants pp ON pp.post_id = p.post_id
      WHERE (p.user_id = ? OR pp.user_id = ?)
+       AND p.is_deleted = 0
        AND p.date IS NOT NULL
        AND p.time IS NOT NULL
        AND TIMESTAMP(p.date, p.time) BETWEEN ? AND ?
@@ -798,8 +807,10 @@ const getDeletionWarnings = async (userId) => {
        p.date,
        ${expirationDeadlineSql} AS deletesAt
      FROM posts p
+     JOIN users u ON u.user_id = p.user_id AND u.is_deleted = FALSE
      LEFT JOIN post_participants pp ON pp.post_id = p.post_id
      WHERE (p.user_id = ? OR pp.user_id = ?)
+       AND p.is_deleted = 0
        AND p.date IS NOT NULL
        AND ${expirationDeadlineSql} BETWEEN ? AND ?`,
     [userId, userId, warningStart, warningEnd],
@@ -941,6 +952,7 @@ router.get("/dm", auth, async (req, res) => {
       FROM dm_rooms dr
       JOIN users u ON (dr.user1_id = ? AND dr.user2_id = u.user_id) OR (dr.user2_id = ? AND dr.user1_id = u.user_id)
       WHERE (dr.user1_id = ? OR dr.user2_id = ?)
+        AND u.is_deleted = FALSE
         AND NOT EXISTS (
           SELECT 1 FROM user_relations r
           WHERE r.status = 'blocked'
@@ -974,6 +986,14 @@ router.post("/dm", auth, async (req, res) => {
   const u2 = Math.max(myId, targetId);
 
   try {
+    const [[targetUser]] = await query(
+      "SELECT user_id FROM users WHERE user_id = ? AND is_deleted = FALSE",
+      [targetId],
+    );
+    if (!targetUser) {
+      return res.status(404).json({ message: "user not found" });
+    }
+
     if (await hasBlockedRelation(myId, targetId)) {
       return res.status(403).json({ message: "blocked user" });
     }
@@ -1010,7 +1030,8 @@ router.get("/dm/:roomId", auth, async (req, res) => {
         u.nickname as targetNickname,
         u.profile_img as targetProfileImg
       FROM dm_rooms dr
-      JOIN users u ON (dr.user1_id = u.user_id AND dr.user2_id = ?) OR (dr.user2_id = u.user_id AND dr.user1_id = ?)
+      JOIN users u ON ((dr.user1_id = u.user_id AND dr.user2_id = ?) OR (dr.user2_id = u.user_id AND dr.user1_id = ?))
+        AND u.is_deleted = FALSE
       WHERE dr.id = ? AND (dr.user1_id = ? OR dr.user2_id = ?)`,
       [myId, myId, roomId, myId, myId],
     );
@@ -1089,6 +1110,14 @@ router.post("/share", auth, async (req, res) => {
   }
 
   try {
+    const [[targetUser]] = await query(
+      "SELECT user_id FROM users WHERE user_id = ? AND is_deleted = FALSE",
+      [targetId],
+    );
+    if (!targetUser) {
+      return res.status(404).json({ message: "user not found" });
+    }
+
     if (await hasBlockedRelation(myId, targetId)) {
       return res.status(403).json({ message: "blocked user" });
     }

@@ -68,7 +68,10 @@ const getBlockedUserIds = async (viewerId) => {
 
 const getParticipantCount = async (postId) => {
   const [[{ count }]] = await pool.query(
-    "SELECT COUNT(*) AS count FROM post_participants WHERE post_id=?",
+    `SELECT COUNT(*) AS count
+     FROM post_participants pp
+     JOIN users u ON u.user_id = pp.user_id
+     WHERE pp.post_id = ? AND u.is_deleted = FALSE`,
     [postId],
   );
   return Number(count) || 0;
@@ -143,7 +146,7 @@ const mapPostRow = (
     }
   });
 
-  const participantCount = 1 + joinedBy.length;
+  const participantCount = (authorDetails ? 1 : 0) + joinedBy.length;
   const capacity = Number(post.capacity) || 2;
   const status =
     post.status === STATUS_OPEN && participantCount >= capacity
@@ -175,7 +178,7 @@ export const getPostWithDetails = async (id, viewerId = null) => {
     `SELECT u.user_id, u.nickname
      FROM post_likes pl
      JOIN users u ON pl.user_id = u.user_id
-     WHERE pl.post_id = ?`,
+     WHERE pl.post_id = ? AND u.is_deleted = FALSE`,
     [id],
   );
 
@@ -183,12 +186,12 @@ export const getPostWithDetails = async (id, viewerId = null) => {
     `SELECT u.user_id, u.nickname, u.profile_img
      FROM post_participants pp
      JOIN users u ON pp.user_id = u.user_id
-     WHERE pp.post_id = ?`,
+     WHERE pp.post_id = ? AND u.is_deleted = FALSE`,
     [id],
   );
 
   const [[authorDetails]] = await pool.query(
-    `SELECT user_id, nickname, profile_img FROM users WHERE user_id = ?`,
+    `SELECT user_id, nickname, profile_img FROM users WHERE user_id = ? AND is_deleted = FALSE`,
     [post.user_id],
   );
 
@@ -196,7 +199,7 @@ export const getPostWithDetails = async (id, viewerId = null) => {
     `SELECT c.*, u.nickname
      FROM comments c
      LEFT JOIN users u ON c.user_id = u.user_id
-     WHERE c.post_id = ?
+     WHERE c.post_id = ? AND (u.user_id IS NULL OR u.is_deleted = FALSE)
      ORDER BY c.created_at ASC, c.id ASC`,
     [id],
   );
@@ -215,7 +218,7 @@ export const getPosts = async (viewerId = null, options = {}) => {
   await ensurePostColumns();
   const { visibleOnly = false } = options;
   const blockedUserIds = await getBlockedUserIds(viewerId);
-  const authorJoin = "JOIN users u ON p.user_id = u.user_id";
+  const authorJoin = "JOIN users u ON p.user_id = u.user_id AND u.is_deleted = FALSE";
   const postSelect = "p.*";
   const whereClauses = ["p.is_deleted = 0"];
   const params = [];
@@ -230,8 +233,9 @@ export const getPosts = async (viewerId = null, options = {}) => {
   const [rows] = await pool.query(
     `SELECT
        ${postSelect},
-       u.nickname AS author,
-       u.nickname AS authorNickname,
+       u.user_id AS author_user_id,
+       u.nickname AS author_nickname,
+       u.profile_img AS author_profile_img,
        COALESCE(la.likes, JSON_ARRAY()) AS likes_json,
        COALESCE(pa.participants, JSON_ARRAY()) AS participants_json,
        COALESCE(ca.comments, JSON_ARRAY()) AS comments_json
@@ -244,7 +248,7 @@ export const getPosts = async (viewerId = null, options = {}) => {
             JSON_OBJECT('user_id', u.user_id, 'nickname', u.nickname)
           ) AS likes
         FROM post_likes pl
-        JOIN users u ON pl.user_id = u.user_id
+        JOIN users u ON pl.user_id = u.user_id AND u.is_deleted = FALSE
         GROUP BY pl.post_id
       ) la ON p.post_id = la.post_id
      LEFT JOIN (
@@ -254,7 +258,7 @@ export const getPosts = async (viewerId = null, options = {}) => {
             JSON_OBJECT('user_id', u.user_id, 'nickname', u.nickname)
           ) AS participants
         FROM post_participants pp
-        JOIN users u ON pp.user_id = u.user_id
+        JOIN users u ON pp.user_id = u.user_id AND u.is_deleted = FALSE
         GROUP BY pp.post_id
       ) pa ON p.post_id = pa.post_id
      LEFT JOIN (
@@ -273,7 +277,8 @@ export const getPosts = async (viewerId = null, options = {}) => {
             )
           ) AS comments
         FROM comments c
-        LEFT JOIN users u ON c.user_id = u.user_id
+        LEFT JOIN users u ON c.user_id = u.user_id AND u.is_deleted = FALSE
+        WHERE u.user_id IS NOT NULL
         GROUP BY c.post_id
       ) ca ON p.post_id = ca.post_id
      WHERE ${whereClauses.join(" AND ")}
@@ -288,6 +293,9 @@ export const getPosts = async (viewerId = null, options = {}) => {
         likes_json: likesJson,
         participants_json: participantsJson,
         comments_json: commentsJson,
+        author_user_id,
+        author_nickname,
+        author_profile_img,
         ...post
       } = row;
 
@@ -296,12 +304,15 @@ export const getPosts = async (viewerId = null, options = {}) => {
         parseJsonArray(likesJson),
         parseJsonArray(participantsJson),
         parseJsonArray(commentsJson),
-        null,
+        {
+          user_id: author_user_id,
+          nickname: author_nickname,
+          profile_img: author_profile_img,
+        },
         blockedUserIds,
       );
     });
 };
-
 export const getMyChatRooms = async (userId) => {
   const blockedUserIds = await getBlockedUserIds(userId);
 
@@ -309,9 +320,11 @@ export const getMyChatRooms = async (userId) => {
   const [idRows] = await pool.query(
     `SELECT DISTINCT p.post_id
      FROM posts p
+     JOIN users u ON p.user_id = u.user_id AND u.is_deleted = FALSE
      LEFT JOIN post_participants pp ON p.post_id = pp.post_id
-     WHERE (p.user_id = ? AND p.is_author_hidden = 0)
-        OR (pp.user_id = ? AND pp.is_hidden = 0)`,
+     WHERE p.is_deleted = 0
+       AND ((p.user_id = ? AND p.is_author_hidden = 0)
+        OR (pp.user_id = ? AND pp.is_hidden = 0))`,
     [userId, userId],
   );
 
@@ -322,24 +335,25 @@ export const getMyChatRooms = async (userId) => {
   const [rows] = await pool.query(
     `SELECT
        p.*,
-       u.nickname AS author,
-       u.nickname AS authorNickname,
+       u.user_id AS author_user_id,
+       u.nickname AS author_nickname,
+       u.profile_img AS author_profile_img,
        COALESCE(la.likes, JSON_ARRAY()) AS likes_json,
        COALESCE(pa.participants, JSON_ARRAY()) AS participants_json,
        COALESCE(ca.comments, JSON_ARRAY()) AS comments_json
      FROM posts p
-     JOIN users u ON p.user_id = u.user_id
+     JOIN users u ON p.user_id = u.user_id AND u.is_deleted = FALSE
      LEFT JOIN (
         SELECT pl.post_id, JSON_ARRAYAGG(JSON_OBJECT('user_id', u.user_id, 'nickname', u.nickname)) AS likes
-        FROM post_likes pl JOIN users u ON pl.user_id = u.user_id GROUP BY pl.post_id
+        FROM post_likes pl JOIN users u ON pl.user_id = u.user_id AND u.is_deleted = FALSE GROUP BY pl.post_id
       ) la ON p.post_id = la.post_id
      LEFT JOIN (
         SELECT pp2.post_id, JSON_ARRAYAGG(JSON_OBJECT('user_id', u.user_id, 'nickname', u.nickname)) AS participants
-        FROM post_participants pp2 JOIN users u ON pp2.user_id = u.user_id GROUP BY pp2.post_id
+        FROM post_participants pp2 JOIN users u ON pp2.user_id = u.user_id AND u.is_deleted = FALSE GROUP BY pp2.post_id
       ) pa ON p.post_id = pa.post_id
      LEFT JOIN (
         SELECT c.post_id, JSON_ARRAYAGG(JSON_OBJECT('id', c.id, 'post_id', c.post_id, 'user_id', c.user_id, 'content', c.content, 'parent_id', c.parent_id, 'created_at', c.created_at, 'edited', c.edited, 'nickname', u.nickname)) AS comments
-        FROM comments c LEFT JOIN users u ON c.user_id = u.user_id GROUP BY c.post_id
+        FROM comments c JOIN users u ON c.user_id = u.user_id AND u.is_deleted = FALSE GROUP BY c.post_id
       ) ca ON p.post_id = ca.post_id
      WHERE p.post_id IN (?)
      ORDER BY p.created_at DESC`,
@@ -362,14 +376,14 @@ export const getMyChatRooms = async (userId) => {
 };
 
 export const getPost = async (id) => {
-  const authorJoin = "JOIN users u ON p.user_id = u.user_id";
+  const authorJoin = "JOIN users u ON p.user_id = u.user_id AND u.is_deleted = FALSE";
   const postSelect = "p.*";
 
   const [[row]] = await pool.query(
     `SELECT ${postSelect}, u.nickname AS author, u.nickname AS authorNickname
      FROM posts p
      ${authorJoin}
-     WHERE p.post_id = ?`,
+     WHERE p.post_id = ? AND p.is_deleted = 0`,
     [id],
   );
   return row;
@@ -493,7 +507,10 @@ export const getPostCapacity = async (postId, connection) => {
 
 export const countPostParticipants = async (postId, connection) => {
   const [[participantCount]] = await connection.query(
-    "SELECT COUNT(*) AS count FROM post_participants WHERE post_id = ?",
+    `SELECT COUNT(*) AS count
+     FROM post_participants pp
+     JOIN users u ON u.user_id = pp.user_id
+     WHERE pp.post_id = ? AND u.is_deleted = FALSE`,
     [postId],
   );
   return participantCount.count;
@@ -613,6 +630,7 @@ export const leavePost = async (userId, postId) => {
        FROM post_participants pp
        JOIN users u ON pp.user_id = u.user_id
        WHERE pp.post_id = ? 
+         AND u.is_deleted = FALSE
        ORDER BY pp.id ASC LIMIT 1`,
       [postId],
     );

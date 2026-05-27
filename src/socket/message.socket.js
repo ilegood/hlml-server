@@ -21,20 +21,29 @@ const ensureMessagesColumns = async () => {
 const getRoomMemberIds = async (roomStr) => {
   if (roomStr.startsWith("dm_")) {
     const dmRoomId = Number(roomStr.slice(3));
-    const [[room]] = await pool.query(
-      "SELECT user1_id, user2_id FROM dm_rooms WHERE id = ?",
+    const [rows] = await pool.query(
+      `SELECT u.user_id
+       FROM dm_rooms dr
+       JOIN users u ON u.user_id IN (dr.user1_id, dr.user2_id)
+       WHERE dr.id = ? AND u.is_deleted = FALSE`,
       [dmRoomId],
     );
-    return room ? [Number(room.user1_id), Number(room.user2_id)] : [];
+    return rows.map((row) => Number(row.user_id));
   }
 
   const roomId = Number(roomStr);
   if (!roomId) return [];
 
   const [rows] = await pool.query(
-    `SELECT user_id FROM posts WHERE post_id = ?
+    `SELECT p.user_id
+     FROM posts p
+     JOIN users u ON u.user_id = p.user_id
+     WHERE p.post_id = ? AND p.is_deleted = 0 AND u.is_deleted = FALSE
      UNION
-     SELECT user_id FROM post_participants WHERE post_id = ?`,
+     SELECT pp.user_id
+     FROM post_participants pp
+     JOIN users u ON u.user_id = pp.user_id
+     WHERE pp.post_id = ? AND u.is_deleted = FALSE`,
     [roomId, roomId],
   );
   return rows.map((row) => Number(row.user_id));

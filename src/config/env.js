@@ -23,6 +23,7 @@ export const env = {
   nodeEnv: process.env.NODE_ENV || "development",
   port: required("PORT"),
   clientOrigins: parseOrigins(required("CLIENT_URL")),
+  clientBaseUrl: parseOrigins(required("CLIENT_URL"))[0],
   jwtSecret: process.env.JWT_SECRET || required("SECRET_KEY"),
   db: {
     host: required("DB_HOST"),
@@ -36,5 +37,13 @@ export const env = {
     cloudName: required("CLOUDINARY_CLOUD_NAME"),
     apiKey: required("CLOUDINARY_API_KEY"),
     apiSecret: required("CLOUDINARY_API_SECRET"),
+  },
+  mail: {
+    host: process.env.MAIL_HOST,
+    port: Number(process.env.MAIL_PORT || 587),
+    secure: process.env.MAIL_SECURE === "true",
+    user: process.env.MAIL_USER,
+    pass: process.env.MAIL_PASS,
+    from: process.env.MAIL_FROM || process.env.MAIL_USER,
   },
 };
