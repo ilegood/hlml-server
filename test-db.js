@@ -11,16 +11,19 @@ async function test() {
   try {
     const connection = await pool.getConnection();
     console.log("✅ Database connected successfully");
-    
+
     const [rows] = await connection.query("SHOW TABLES LIKE 'posts'");
     if (rows.length > 0) {
       console.log("✅ 'posts' table exists");
       const [columns] = await connection.query("DESCRIBE posts");
-      console.log("Table columns:", columns.map(c => c.Field));
+      console.log(
+        "Table columns:",
+        columns.map((c) => c.Field),
+      );
     } else {
       console.log("❌ 'posts' table does NOT exist");
     }
-    
+
     connection.release();
   } catch (err) {
     console.error("❌ Database error:", err.message);
