@@ -28,6 +28,7 @@ const optionalAuth = (req, _res, next) => {
 
 // routes
 router.get("/", optionalAuth, postController.getPosts);
+router.get("/my-rooms", auth, postController.getMyChatRooms);
 router.get("/kicked", auth, postController.getKickedPosts);
 router.get("/:id", optionalAuth, postController.getPost);
 
@@ -45,8 +46,8 @@ router.delete("/:id/ban", auth, postController.deletePostBan);
 
 // comments
 router.get("/:id/comments", optionalAuth, postController.getComments);
-router.post("/:id/comments", auth, postController.createComment);
-router.patch("/comments/:id", auth, postController.updateComment);
+router.post("/:id/comments", auth, upload.single("image"), postController.createComment);
+router.patch("/comments/:id", auth, upload.single("image"), postController.updateComment);
 router.delete("/comments/:id", auth, postController.deleteComment);
 
 export default router;

@@ -1,11 +1,70 @@
 import pool from "../db.js";
 import { toInt } from "./utils.js";
 
+let messagesColumnsEnsured = false;
+
+const ensureMessagesColumns = async () => {
+  if (messagesColumnsEnsured) return;
+  try {
+    await pool.query("ALTER TABLE messages ADD COLUMN is_deleted BOOLEAN DEFAULT FALSE");
+  } catch (err) {
+    if (err.errno !== 1060) console.warn("Failed to add messages column:", err.message);
+  }
+  try {
+    await pool.query("ALTER TABLE messages ADD COLUMN is_edited BOOLEAN DEFAULT FALSE");
+  } catch (err) {
+    if (err.errno !== 1060) console.warn("Failed to add is_edited column:", err.message);
+  }
+  messagesColumnsEnsured = true;
+};
+
+const getRoomMemberIds = async (roomStr) => {
+  if (roomStr.startsWith("dm_")) {
+    const dmRoomId = Number(roomStr.slice(3));
+    const [rows] = await pool.query(
+      `SELECT u.user_id
+       FROM dm_rooms dr
+       JOIN users u ON u.user_id IN (dr.user1_id, dr.user2_id)
+       WHERE dr.id = ? AND u.is_deleted = FALSE`,
+      [dmRoomId],
+    );
+    return rows.map((row) => Number(row.user_id));
+  }
+
+  const roomId = Number(roomStr);
+  if (!roomId) return [];
+
+  const [rows] = await pool.query(
+    `SELECT p.user_id
+     FROM posts p
+     JOIN users u ON u.user_id = p.user_id
+     WHERE p.post_id = ? AND p.is_deleted = 0 AND u.is_deleted = FALSE
+     UNION
+     SELECT pp.user_id
+     FROM post_participants pp
+     JOIN users u ON u.user_id = pp.user_id
+     WHERE pp.post_id = ? AND u.is_deleted = FALSE`,
+    [roomId, roomId],
+  );
+  return rows.map((row) => Number(row.user_id));
+};
+
+const emitUnreadChanged = async (io, roomStr, exceptUserId = null) => {
+  const memberIds = await getRoomMemberIds(roomStr);
+  memberIds.forEach((memberId) => {
+    if (exceptUserId && Number(memberId) === Number(exceptUserId)) return;
+    io.to(`user_${memberId}`).emit("chat_unread_changed", {
+      roomId: roomStr,
+      reason: "message",
+    });
+  });
+};
+
 export const registerMessageSocket = (io, socket) => {
   socket.on("send_message", async (data, ack) => {
     const { roomId, userId, nickname, content, isSystem, parentId } = data;
     const roomStr = String(roomId || "");
-    const userIdInt = toInt(userId);
+    const userIdInt = toInt(socket.data.userId) || toInt(userId);
     const parentIdInt = parentId ? toInt(parentId) : null;
     if (!roomStr || !userIdInt || !content?.trim()) {
       if (typeof ack === "function") ack({ ok: false });
@@ -66,6 +125,7 @@ export const registerMessageSocket = (io, socket) => {
       };
 
       io.to(roomStr).emit("receive_message", message);
+      await emitUnreadChanged(io, roomStr, userIdInt);
       if (typeof ack === "function") ack({ ok: true, message });
     } catch (error) {
       console.error("Failed to save message:", error);
@@ -77,13 +137,24 @@ export const registerMessageSocket = (io, socket) => {
 
   socket.on("edit_message", async ({ messageId, content, roomId }) => {
     const roomStr = String(roomId);
+    const userIdInt = toInt(socket.data.userId);
+    if (!roomStr || !messageId || !userIdInt || !content?.trim()) return;
+
+    await ensureMessagesColumns();
 
     try {
-      await pool.query(
-        "UPDATE messages SET content = ?, is_edited = 1 WHERE id = ?",
-        [content, messageId],
+      const [result] = await pool.query(
+        `UPDATE messages
+         SET content = ?, is_edited = 1
+         WHERE id = ? AND room_id = ? AND user_id = ? AND is_deleted = 0`,
+        [content.trim(), messageId, roomStr, userIdInt],
       );
-      io.to(roomStr).emit("message_edited", { messageId, content });
+      if (result.affectedRows === 0) return;
+
+      io.to(roomStr).emit("message_edited", {
+        messageId,
+        content: content.trim(),
+      });
     } catch (error) {
       console.error("Failed to edit message:", error);
     }
@@ -91,12 +162,20 @@ export const registerMessageSocket = (io, socket) => {
 
   socket.on("delete_message", async ({ messageId, roomId }) => {
     const roomStr = String(roomId);
+    const userIdInt = toInt(socket.data.userId);
+    if (!roomStr || !messageId || !userIdInt) return;
+
+    await ensureMessagesColumns();
 
     try {
-      await pool.query(
-        "UPDATE messages SET is_deleted = 1, content = ? WHERE id = ?",
-        ["\uc0ad\uc81c\ub41c \uba54\uc2dc\uc9c0\uc785\ub2c8\ub2e4.", messageId],
+      const [result] = await pool.query(
+        `UPDATE messages
+         SET is_deleted = 1, content = ?
+         WHERE id = ? AND room_id = ? AND user_id = ?`,
+        ["\uc0ad\uc81c\ub41c \uba54\uc2dc\uc9c0\uc785\ub2c8\ub2e4.", messageId, roomStr, userIdInt],
       );
+      if (result.affectedRows === 0) return;
+
       io.to(roomStr).emit("message_deleted", { messageId });
     } catch (error) {
       console.error("Failed to delete message:", error);
@@ -105,7 +184,7 @@ export const registerMessageSocket = (io, socket) => {
 
   socket.on("react_message", async ({ messageId, userId, emoji, roomId }) => {
     const roomStr = String(roomId);
-    const userIdInt = toInt(userId);
+    const userIdInt = toInt(socket.data.userId) || toInt(userId);
     if (!userIdInt) return;
 
     try {
@@ -135,9 +214,21 @@ export const registerMessageSocket = (io, socket) => {
     }
   });
 
+  socket.on("typing", ({ roomId, nickname }) => {
+    const roomStr = String(roomId);
+    if (!roomStr) return;
+    socket.to(roomStr).emit("typing", { nickname });
+  });
+
+  socket.on("stop_typing", ({ roomId }) => {
+    const roomStr = String(roomId);
+    if (!roomStr) return;
+    socket.to(roomStr).emit("stop_typing");
+  });
+
   socket.on("mark_read", async ({ messageId, userId, roomId }) => {
     const roomStr = String(roomId);
-    const userIdInt = toInt(userId);
+    const userIdInt = toInt(socket.data.userId) || toInt(userId);
     if (!userIdInt) return;
 
     try {
@@ -159,6 +250,10 @@ export const registerMessageSocket = (io, socket) => {
         io.to(roomStr).emit("update_read_count", {
           messageId,
           readCount: total,
+        });
+        io.to(`user_${userIdInt}`).emit("chat_unread_changed", {
+          roomId: roomStr,
+          reason: "read",
         });
       }
     } catch (error) {

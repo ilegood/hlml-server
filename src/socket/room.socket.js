@@ -1,9 +1,11 @@
 import { query } from "../db.js";
+import { toUtcIsoString } from "../utils/time.js";
 import { parseJsonArray, toInt } from "./utils.js";
 
 const formatMessageRows = (rows) =>
   rows.map((row) => ({
     ...row,
+    created_at: toUtcIsoString(row.created_at),
     nickname: row.is_system
       ? row.nickname
       : row.latestNickname || row.nickname,
@@ -32,6 +34,7 @@ export const registerRoomSocket = (io, socket) => {
   };
 
   socket.on("join_room", async ({ roomId, nickname, userId }) => {
+    console.log("Received join_room event for roomId:", roomId, "by user:", userId);
     const userIdInt = toInt(userId);
     if (!roomId) return;
 
@@ -81,10 +84,21 @@ export const registerRoomSocket = (io, socket) => {
         }
 
         const [roomRows] = await query(
-          `SELECT p.title, p.image, p.place, p.latitude, p.longitude, u.nickname AS author
+          `SELECT
+             p.title,
+             p.image,
+             p.date,
+             p.time,
+             p.place,
+             p.latitude,
+             p.longitude,
+             p.capacity,
+             p.participants,
+             p.status,
+             u.nickname AS author
            FROM posts p
-           JOIN users u ON p.user_id = u.user_id
-           WHERE p.post_id = ?`,
+           JOIN users u ON p.user_id = u.user_id AND u.is_deleted = FALSE
+           WHERE p.post_id = ? AND p.is_deleted = 0`,
           [roomIdInt],
         );
 
@@ -93,28 +107,67 @@ export const registerRoomSocket = (io, socket) => {
             title: roomRows[0].title,
             image: roomRows[0].image,
             author: roomRows[0].author,
+            date: roomRows[0].date,
+            time: roomRows[0].time,
             place: roomRows[0].place,
             latitude: roomRows[0].latitude,
             longitude: roomRows[0].longitude,
+            capacity: roomRows[0].capacity,
+            participants: roomRows[0].participants,
+            status: roomRows[0].status,
             isDM: false,
           });
         }
 
         if (nickname && userIdInt) {
-          const joinMsgContent = `${nickname}\ub2d8\uc774 \uc785\uc7a5\ud558\uc168\uc2b5\ub2c8\ub2e4.`;
-          const [existing] = await query(
-            "SELECT id FROM messages WHERE room_id = ? AND user_id = ? AND is_system = 1 AND content = ?",
-            [roomStr, userIdInt, joinMsgContent],
+          const joinMsgContent = `${nickname}님이 들어왔습니다.`;
+          const [result] = await query(
+            `INSERT INTO messages (room_id, user_id, nickname, content, is_system)
+             SELECT ?, ?, ?, ?, ?
+             FROM DUAL
+             WHERE NOT EXISTS (
+               SELECT 1 FROM messages
+               WHERE room_id = ? AND user_id = ? AND is_system = 1 AND content = ?
+             )`,
+            [roomStr, userIdInt, "System", joinMsgContent, 1, roomStr, userIdInt, joinMsgContent],
           );
 
-          if (existing.length === 0) {
-            const message = await saveSystemMessage({
-              roomId: roomStr,
+          if (result.affectedRows > 0) {
+            const message = {
+              id: result.insertId,
+              roomId: String(roomStr),
               userId: userIdInt,
+              nickname: "System",
               content: joinMsgContent,
-            });
+              isSystem: true,
+              created_at: new Date().toISOString(),
+            };
 
             io.to(roomStr).emit("receive_message", message);
+
+            // Send entrance alarm to all participants
+            const [members] = await query(
+              `SELECT pp.user_id
+               FROM post_participants pp
+               JOIN users u ON u.user_id = pp.user_id
+               WHERE pp.post_id = ? AND u.is_deleted = FALSE
+               UNION
+               SELECT p.user_id
+               FROM posts p
+               JOIN users u ON u.user_id = p.user_id
+               WHERE p.post_id = ? AND p.is_deleted = 0 AND u.is_deleted = FALSE`,
+              [roomIdInt, roomIdInt],
+            );
+
+            members.forEach((member) => {
+              if (String(member.user_id) !== String(userIdInt)) {
+                io.to(`user_${member.user_id}`).emit("entrance_alarm", {
+                  roomId: roomStr,
+                  roomTitle: roomRows[0].title,
+                  message: joinMsgContent,
+                });
+              }
+            });
           }
         }
       }
@@ -136,8 +189,10 @@ export const registerRoomSocket = (io, socket) => {
          LIMIT 50`,
         [roomStr],
       );
+      
+      const formattedMessages = formatMessageRows(rows);
 
-      socket.emit("load_messages", formatMessageRows(rows));
+      socket.emit("load_messages", formattedMessages);
     } catch (error) {
       console.error("Failed to load room messages:", error);
     }
@@ -153,6 +208,24 @@ export const registerRoomSocket = (io, socket) => {
     const roomStr = String(roomId);
 
     try {
+      if (nickname) {
+        const joinMsgOld = `${nickname}님이 들어왔습니다.`;
+        const leaveMsgContent = `${nickname}님이 퇴장하셨습니다.`;
+
+        // 기존 입장 메시지 삭제 → 재입장 시 NOT EXISTS에 막히지 않음
+        await query(
+          "DELETE FROM messages WHERE room_id = ? AND user_id = ? AND is_system = 1 AND content = ?",
+          [roomStr, userIdInt, joinMsgOld],
+        );
+
+        const message = await saveSystemMessage({
+          roomId: roomStr,
+          userId: userIdInt,
+          content: leaveMsgContent,
+        });
+        io.to(roomStr).emit("receive_message", message);
+      }
+
       socket.leave(roomStr);
       if (typeof ack === "function") ack({ ok: true });
     } catch (error) {
@@ -175,8 +248,8 @@ export const registerRoomSocket = (io, socket) => {
         const [[post]] = await query(
           `SELECT p.post_id, u.nickname AS author
            FROM posts p
-           JOIN users u ON p.user_id = u.user_id
-           WHERE p.post_id = ?`,
+           JOIN users u ON p.user_id = u.user_id AND u.is_deleted = FALSE
+           WHERE p.post_id = ? AND p.is_deleted = 0`,
           [roomIdInt],
         );
         const [[user]] = await query(

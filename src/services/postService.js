@@ -25,6 +25,41 @@ const normalizeTime = (time) => {
   return String(time).slice(0, 8);
 };
 
+const todayString = () => {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
+
+const nextYearTodayString = () => {
+  const date = new Date();
+  date.setFullYear(date.getFullYear() + 1);
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
+
+const assertValidAppointmentDate = (date) => {
+  if (!date) return;
+
+  if (date < todayString()) {
+    const error = new Error("오늘 이전 날짜는 선택할 수 없습니다.");
+    error.status = 400;
+    throw error;
+  }
+
+  if (date > nextYearTodayString()) {
+    const error = new Error(
+      "약속 날짜는 최대 내년 오늘까지 선택할 수 있습니다.",
+    );
+    error.status = 400;
+    throw error;
+  }
+};
+
 const normalizeCapacity = (capacity) => {
   const parsed = Number.parseInt(capacity, 10);
   return Number.isNaN(parsed) ? 2 : parsed;
@@ -43,18 +78,24 @@ const normalizeStatus = (status) => {
     : "\ubaa8\uc9d1\uc911";
 };
 
-const normalizePostData = (body) => ({
-  ...body,
-  date: normalizeDate(body.date),
-  time: normalizeTime(body.time),
-  capacity: normalizeCapacity(body.capacity),
-  latitude: normalizeFloatOrNull(body.latitude),
-  longitude: normalizeFloatOrNull(body.longitude),
-  categories: normalizeCategories(body.categories),
-  status: normalizeStatus(body.status),
-});
+const normalizePostData = (body) => {
+  const date = normalizeDate(body.date);
+  assertValidAppointmentDate(date);
 
-export const getPosts = (viewerId) => repo.getPosts(viewerId);
+  return {
+    ...body,
+    date,
+    time: normalizeTime(body.time),
+    capacity: normalizeCapacity(body.capacity),
+    latitude: normalizeFloatOrNull(body.latitude),
+    longitude: normalizeFloatOrNull(body.longitude),
+    categories: normalizeCategories(body.categories),
+    status: normalizeStatus(body.status),
+  };
+};
+
+export const getPosts = (viewerId, options) => repo.getPosts(viewerId, options);
+export const getMyChatRooms = (userId) => repo.getMyChatRooms(userId);
 export const getPost = (id, viewerId) => repo.getPostWithDetails(id, viewerId);
 
 export const createPost = async (req) => {
@@ -103,11 +144,15 @@ export const getComments = (postId, viewerId) =>
   repo.getComments(postId, viewerId);
 
 export const createComment = (req) => {
+  const { body, file, params } = req;
+  const image = file ? file.path : null;
+
   return repo.createComment({
-    postId: req.params.id,
+    postId: params.id,
     userId: req.userId,
-    content: req.body.content,
-    parent_id: req.body.parent_id,
+    content: body.content,
+    parent_id: body.parent_id,
+    image,
   });
 };
 
@@ -119,4 +164,5 @@ export const deleteComment = (id, userId) => repo.deleteComment(id, userId);
 
 export const getKickedPosts = (userId) => repo.getKickedPostsForUser(userId);
 
-export const deletePostBan = (userId, postId) => repo.deletePostBan(userId, postId);
+export const deletePostBan = (userId, postId) =>
+  repo.deletePostBan(userId, postId);
