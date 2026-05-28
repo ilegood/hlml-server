@@ -1,0 +1,737 @@
+import pool from "../db.js";
+
+let columnsEnsured = false;
+
+const ensurePostColumns = async () => {
+  if (columnsEnsured) return;
+  try {
+    await pool.query(
+      "ALTER TABLE posts ADD COLUMN is_deleted BOOLEAN DEFAULT FALSE",
+    );
+  } catch (err) {
+    if (err.errno !== 1060)
+      console.warn("Failed to add is_deleted column:", err.message);
+  }
+  columnsEnsured = true;
+};
+
+const STATUS_OPEN = "\ubaa8\uc9d1\uc911";
+const STATUS_CLOSED = "\ubaa8\uc9d1\uc644\ub8cc";
+const TIMEZONE = "Asia/Seoul";
+
+const parseJsonArray = (value) => {
+  if (!value) return [];
+  if (Array.isArray(value)) return value.filter(Boolean);
+
+  try {
+    const parsed = JSON.parse(
+      Buffer.isBuffer(value) ? value.toString() : value,
+    );
+    return Array.isArray(parsed) ? parsed.filter(Boolean) : [];
+  } catch {
+    return [];
+  }
+};
+
+const toTimestamp = (value) => {
+  const timestamp = new Date(value).getTime();
+  return Number.isNaN(timestamp) ? 0 : timestamp;
+};
+
+const getSeoulDateTimeString = () => {
+  const now = new Date();
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: TIMEZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  }).formatToParts(now);
+  const values = Object.fromEntries(
+    parts.map((part) => [part.type, part.value]),
+  );
+  return `${values.year}-${values.month}-${values.day} ${values.hour}:${values.minute}:${values.second}`;
+};
+
+const getBlockedUserIds = async (viewerId) => {
+  if (!viewerId) return new Set();
+
+  const [rows] = await pool.query(
+    "SELECT target_id FROM user_relations WHERE requester_id = ? AND status = 'blocked'",
+    [viewerId],
+  );
+  return new Set(rows.map((row) => Number(row.target_id)));
+};
+
+const getParticipantCount = async (postId) => {
+  const [[{ count }]] = await pool.query(
+    `SELECT COUNT(*) AS count
+     FROM post_participants pp
+     JOIN users u ON u.user_id = pp.user_id
+     WHERE pp.post_id = ? AND u.is_deleted = FALSE`,
+    [postId],
+  );
+  return Number(count) || 0;
+};
+
+const syncPostParticipantState = async (
+  postId,
+  capacity,
+  currentStatus = null,
+  wasFull = false,
+) => {
+  const count = await getParticipantCount(postId);
+  const participants = 1 + count;
+  const status =
+    (currentStatus === STATUS_CLOSED && !wasFull) ||
+    participants >= (capacity || 2)
+      ? STATUS_CLOSED
+      : STATUS_OPEN;
+
+  await pool.query(
+    "UPDATE posts SET participants=?, status=? WHERE post_id=?",
+    [participants, status, postId],
+  );
+
+  return { participants, status };
+};
+
+const mapPostRow = (
+  post,
+  likes = [],
+  participants = [],
+  comments = [],
+  authorDetails = null,
+  blockedUserIds = new Set(),
+) => {
+  const joinedBy = participants.map((row) => row.user_id);
+  const joinedByNicknames = participants.map((row) => row.nickname);
+  const joinedUserIds = participants.map((row) => row.user_id);
+  const topLevel = [];
+  const byId = new Map();
+
+  const sortedComments = [...comments].sort((a, b) => {
+    const dateDiff = toTimestamp(a.created_at) - toTimestamp(b.created_at);
+    return dateDiff || Number(a.id) - Number(b.id);
+  });
+
+  sortedComments.forEach((row) => {
+    const isBlockedComment = blockedUserIds.has(Number(row.user_id));
+    const authorNickname = isBlockedComment
+      ? "\ucc28\ub2e8\ud55c \uc0ac\uc6a9\uc790"
+      : row.nickname || "Anonymous";
+    const item = {
+      id: row.id,
+      userId: row.user_id,
+      text: isBlockedComment
+        ? "\ucc28\ub2e8\ud55c \uc0ac\ub78c\uc758 \uba54\uc2dc\uc9c0\uc785\ub2c8\ub2e4"
+        : row.content,
+      image: row.image,
+      authorNickname,
+      createdAt: row.created_at,
+      edited: Boolean(row.edited),
+      replies: [],
+    };
+
+    byId.set(row.id, item);
+
+    if (row.parent_id) {
+      const parent = byId.get(row.parent_id);
+      if (parent) parent.replies.push(item);
+    } else {
+      topLevel.push(item);
+    }
+  });
+
+  const participantCount = (authorDetails ? 1 : 0) + joinedBy.length;
+  const capacity = Number(post.capacity) || 2;
+  const status =
+    post.status === STATUS_OPEN && participantCount >= capacity
+      ? STATUS_CLOSED
+      : post.status;
+
+  return {
+    ...post,
+    status,
+    authorDetails,
+    participantDetails: participants,
+    likes: likes.length,
+    likedBy: likes.map((row) => row.user_id),
+    joinedBy,
+    joinedByNicknames,
+    joinedUserIds,
+    participants: participantCount,
+    comments: topLevel,
+  };
+};
+
+export const getPostWithDetails = async (id, viewerId = null) => {
+  const post = await getPost(id);
+  if (!post) return null;
+  const blockedUserIds = await getBlockedUserIds(viewerId);
+  if (blockedUserIds.has(Number(post.user_id))) return null;
+
+  const [likes] = await pool.query(
+    `SELECT u.user_id, u.nickname
+     FROM post_likes pl
+     JOIN users u ON pl.user_id = u.user_id
+     WHERE pl.post_id = ? AND u.is_deleted = FALSE`,
+    [id],
+  );
+
+  const [participants] = await pool.query(
+    `SELECT u.user_id, u.nickname, u.profile_img
+     FROM post_participants pp
+     JOIN users u ON pp.user_id = u.user_id
+     WHERE pp.post_id = ? AND u.is_deleted = FALSE`,
+    [id],
+  );
+
+  const [[authorDetails]] = await pool.query(
+    `SELECT user_id, nickname, profile_img FROM users WHERE user_id = ? AND is_deleted = FALSE`,
+    [post.user_id],
+  );
+
+  const [comments] = await pool.query(
+    `SELECT c.*, u.nickname
+     FROM comments c
+     LEFT JOIN users u ON c.user_id = u.user_id
+     WHERE c.post_id = ? AND (u.user_id IS NULL OR u.is_deleted = FALSE)
+     ORDER BY c.created_at ASC, c.id ASC`,
+    [id],
+  );
+
+  return mapPostRow(
+    post,
+    likes,
+    participants,
+    comments,
+    authorDetails,
+    blockedUserIds,
+  );
+};
+
+export const getPosts = async (viewerId = null, options = {}) => {
+  await ensurePostColumns();
+  const { visibleOnly = false } = options;
+  const blockedUserIds = await getBlockedUserIds(viewerId);
+  const authorJoin = "JOIN users u ON p.user_id = u.user_id AND u.is_deleted = FALSE";
+  const postSelect = "p.*";
+  const whereClauses = ["p.is_deleted = 0"];
+  const params = [];
+
+  if (visibleOnly) {
+    whereClauses.push(
+      `(p.status <> ? AND (p.date IS NULL OR p.time IS NULL OR TIMESTAMP(p.date, p.time) > ?))`,
+    );
+    params.push(STATUS_CLOSED, getSeoulDateTimeString());
+  }
+
+  const [rows] = await pool.query(
+    `SELECT
+       ${postSelect},
+       u.user_id AS author_user_id,
+       u.nickname AS author_nickname,
+       u.profile_img AS author_profile_img,
+       COALESCE(la.likes, JSON_ARRAY()) AS likes_json,
+       COALESCE(pa.participants, JSON_ARRAY()) AS participants_json,
+       COALESCE(ca.comments, JSON_ARRAY()) AS comments_json
+     FROM posts p
+     ${authorJoin}
+     LEFT JOIN (
+        SELECT
+          pl.post_id,
+          JSON_ARRAYAGG(
+            JSON_OBJECT('user_id', u.user_id, 'nickname', u.nickname)
+          ) AS likes
+        FROM post_likes pl
+        JOIN users u ON pl.user_id = u.user_id AND u.is_deleted = FALSE
+        GROUP BY pl.post_id
+      ) la ON p.post_id = la.post_id
+     LEFT JOIN (
+        SELECT
+          pp.post_id,
+          JSON_ARRAYAGG(
+            JSON_OBJECT('user_id', u.user_id, 'nickname', u.nickname)
+          ) AS participants
+        FROM post_participants pp
+        JOIN users u ON pp.user_id = u.user_id AND u.is_deleted = FALSE
+        GROUP BY pp.post_id
+      ) pa ON p.post_id = pa.post_id
+     LEFT JOIN (
+        SELECT
+          c.post_id,
+          JSON_ARRAYAGG(
+            JSON_OBJECT(
+              'id', c.id,
+              'post_id', c.post_id,
+              'user_id', c.user_id,
+              'content', c.content,
+              'parent_id', c.parent_id,
+              'created_at', c.created_at,
+              'edited', c.edited,
+              'nickname', u.nickname
+            )
+          ) AS comments
+        FROM comments c
+        LEFT JOIN users u ON c.user_id = u.user_id AND u.is_deleted = FALSE
+        WHERE u.user_id IS NOT NULL
+        GROUP BY c.post_id
+      ) ca ON p.post_id = ca.post_id
+     WHERE ${whereClauses.join(" AND ")}
+     ORDER BY p.created_at DESC`,
+    params,
+  );
+
+  return rows
+    .filter((row) => !blockedUserIds.has(Number(row.user_id)))
+    .map((row) => {
+      const {
+        likes_json: likesJson,
+        participants_json: participantsJson,
+        comments_json: commentsJson,
+        author_user_id,
+        author_nickname,
+        author_profile_img,
+        ...post
+      } = row;
+
+      return mapPostRow(
+        post,
+        parseJsonArray(likesJson),
+        parseJsonArray(participantsJson),
+        parseJsonArray(commentsJson),
+        {
+          user_id: author_user_id,
+          nickname: author_nickname,
+          profile_img: author_profile_img,
+        },
+        blockedUserIds,
+      );
+    });
+};
+export const getMyChatRooms = async (userId) => {
+  const blockedUserIds = await getBlockedUserIds(userId);
+
+  // Get post IDs where user is author or participant
+  const [idRows] = await pool.query(
+    `SELECT DISTINCT p.post_id
+     FROM posts p
+     JOIN users u ON p.user_id = u.user_id AND u.is_deleted = FALSE
+     LEFT JOIN post_participants pp ON p.post_id = pp.post_id
+     WHERE p.is_deleted = 0
+       AND ((p.user_id = ? AND p.is_author_hidden = 0)
+        OR (pp.user_id = ? AND pp.is_hidden = 0))`,
+    [userId, userId],
+  );
+
+  if (idRows.length === 0) return [];
+
+  const postIds = idRows.map((row) => row.post_id);
+
+  const [rows] = await pool.query(
+    `SELECT
+       p.*,
+       u.user_id AS author_user_id,
+       u.nickname AS author_nickname,
+       u.profile_img AS author_profile_img,
+       COALESCE(la.likes, JSON_ARRAY()) AS likes_json,
+       COALESCE(pa.participants, JSON_ARRAY()) AS participants_json,
+       COALESCE(ca.comments, JSON_ARRAY()) AS comments_json
+     FROM posts p
+     JOIN users u ON p.user_id = u.user_id AND u.is_deleted = FALSE
+     LEFT JOIN (
+        SELECT pl.post_id, JSON_ARRAYAGG(JSON_OBJECT('user_id', u.user_id, 'nickname', u.nickname)) AS likes
+        FROM post_likes pl JOIN users u ON pl.user_id = u.user_id AND u.is_deleted = FALSE GROUP BY pl.post_id
+      ) la ON p.post_id = la.post_id
+     LEFT JOIN (
+        SELECT pp2.post_id, JSON_ARRAYAGG(JSON_OBJECT('user_id', u.user_id, 'nickname', u.nickname)) AS participants
+        FROM post_participants pp2 JOIN users u ON pp2.user_id = u.user_id AND u.is_deleted = FALSE GROUP BY pp2.post_id
+      ) pa ON p.post_id = pa.post_id
+     LEFT JOIN (
+        SELECT c.post_id, JSON_ARRAYAGG(JSON_OBJECT('id', c.id, 'post_id', c.post_id, 'user_id', c.user_id, 'content', c.content, 'parent_id', c.parent_id, 'created_at', c.created_at, 'edited', c.edited, 'nickname', u.nickname)) AS comments
+        FROM comments c JOIN users u ON c.user_id = u.user_id AND u.is_deleted = FALSE GROUP BY c.post_id
+      ) ca ON p.post_id = ca.post_id
+     WHERE p.post_id IN (?)
+     ORDER BY p.created_at DESC`,
+    [postIds],
+  );
+
+  return rows
+    .filter((row) => !blockedUserIds.has(Number(row.user_id)))
+    .map((row) => {
+      const { likes_json, participants_json, comments_json, ...post } = row;
+      return mapPostRow(
+        post,
+        parseJsonArray(likes_json),
+        parseJsonArray(participants_json),
+        parseJsonArray(comments_json),
+        null,
+        blockedUserIds,
+      );
+    });
+};
+
+export const getPost = async (id) => {
+  const authorJoin = "JOIN users u ON p.user_id = u.user_id AND u.is_deleted = FALSE";
+  const postSelect = "p.*";
+
+  const [[row]] = await pool.query(
+    `SELECT ${postSelect}, u.nickname AS author, u.nickname AS authorNickname
+     FROM posts p
+     ${authorJoin}
+     WHERE p.post_id = ? AND p.is_deleted = 0`,
+    [id],
+  );
+  return row;
+};
+
+export const createPost = async (data) => {
+  const [result] = await pool.query(
+    `INSERT INTO posts
+    (title, content, date, time, place, latitude, longitude, capacity, status, user_id, categories, image)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      data.title,
+      data.content,
+      data.date,
+      data.time,
+      data.place,
+      data.latitude,
+      data.longitude,
+      data.capacity,
+      data.status,
+      data.user_id,
+      data.categories,
+      data.image,
+    ],
+  );
+
+  return { id: result.insertId };
+};
+
+export const updatePost = async (id, userId, data) => {
+  const currentParticipants = (await getParticipantCount(id)) + 1;
+  const nextCapacity = Number.parseInt(data.capacity, 10) || 2;
+
+  if (nextCapacity < currentParticipants) {
+    const error = new Error(
+      "capacity cannot be lower than current participants",
+    );
+    error.status = 400;
+    throw error;
+  }
+
+  const nextStatus =
+    currentParticipants >= nextCapacity ? STATUS_CLOSED : data.status;
+
+  const [result] = await pool.query(
+    `UPDATE posts SET
+     title=?, content=?, date=?, time=?, place=?, latitude=?, longitude=?,
+     capacity=?, participants=?, status=?, categories=?, image=?, edited=1
+     WHERE post_id=? AND user_id=?`,
+    [
+      data.title,
+      data.content,
+      data.date,
+      data.time,
+      data.place,
+      data.latitude,
+      data.longitude,
+      nextCapacity,
+      currentParticipants,
+      nextStatus,
+      data.categories,
+      data.image,
+      id,
+      userId,
+    ],
+  );
+  return result.affectedRows;
+};
+
+export const deletePost = async (id, userId) => {
+  const connection = await pool.getConnection();
+  try {
+    await connection.beginTransaction();
+
+    const [[post]] = await connection.query(
+      "SELECT post_id FROM posts WHERE post_id=? AND user_id=?",
+      [id, userId],
+    );
+
+    if (!post) {
+      await connection.rollback();
+      return 0;
+    }
+
+    // Delete associated messages (post room messages use post_id as room_id)
+    await connection.query("DELETE FROM messages WHERE room_id = ?", [id]);
+
+    const [result] = await connection.query(
+      "DELETE FROM posts WHERE post_id=? AND user_id=?",
+      [id, userId],
+    );
+
+    await connection.commit();
+    return result.affectedRows;
+  } catch (error) {
+    await connection.rollback();
+    throw error;
+  } finally {
+    connection.release();
+  }
+};
+
+export const getJoinedPostsForUser = async (userId, connection) => {
+  const [joinedPosts] = await connection.query(
+    `SELECT pp.post_id
+     FROM post_participants pp
+     JOIN posts p ON pp.post_id = p.post_id
+     WHERE pp.user_id = ? AND p.user_id != ?`,
+    [userId, userId],
+  );
+  return joinedPosts;
+};
+
+export const getPostCapacity = async (postId, connection) => {
+  const [[postRow]] = await connection.query(
+    "SELECT capacity FROM posts WHERE post_id = ?",
+    [postId],
+  );
+  return postRow;
+};
+
+export const countPostParticipants = async (postId, connection) => {
+  const [[participantCount]] = await connection.query(
+    `SELECT COUNT(*) AS count
+     FROM post_participants pp
+     JOIN users u ON u.user_id = pp.user_id
+     WHERE pp.post_id = ? AND u.is_deleted = FALSE`,
+    [postId],
+  );
+  return participantCount.count;
+};
+
+export const updatePostParticipantsAndStatus = async (
+  postId,
+  currentParticipants,
+  status,
+  connection,
+) => {
+  await connection.query(
+    "UPDATE posts SET participants = ?, status = ? WHERE post_id = ?",
+    [currentParticipants, status, postId],
+  );
+};
+
+export const toggleLikePost = async (userId, postId) => {
+  const post = await getPost(postId);
+  if (!post) return null;
+  if (String(post.user_id) === String(userId)) {
+    const error = new Error("cannot like own post");
+    error.status = 400;
+    throw error;
+  }
+
+  const [[existing]] = await pool.query(
+    "SELECT id FROM post_likes WHERE user_id=? AND post_id=?",
+    [userId, postId],
+  );
+
+  if (existing) {
+    await pool.query("DELETE FROM post_likes WHERE id=?", [existing.id]);
+  } else {
+    await pool.query(
+      "INSERT INTO post_likes (user_id, post_id) VALUES (?, ?)",
+      [userId, postId],
+    );
+  }
+
+  return getPostWithDetails(postId);
+};
+
+export const toggleJoinPost = async (userId, postId) => {
+  const post = await getPost(postId);
+  if (!post) return null;
+  if (String(post.user_id) === String(userId)) {
+    return getPostWithDetails(postId, userId);
+  }
+
+  const [[existing]] = await pool.query(
+    "SELECT id FROM post_participants WHERE user_id=? AND post_id=?",
+    [userId, postId],
+  );
+
+  if (existing) {
+    const wasFull = (post.participants || 1) >= (post.capacity || 2);
+    await pool.query("DELETE FROM post_participants WHERE id=?", [existing.id]);
+    await syncPostParticipantState(postId, post.capacity, post.status, wasFull);
+  } else {
+    if (post.status === STATUS_CLOSED) {
+      const error = new Error("recruitment is closed");
+      error.status = 400;
+      throw error;
+    }
+
+    // Blocked users cannot rejoin a post room.
+    const [banRows] = await pool.query(
+      "SELECT id FROM post_bans WHERE post_id = ? AND user_id = ?",
+      [postId, userId],
+    );
+
+    if (banRows.length > 0) {
+      const error = new Error("You cannot rejoin this room.");
+      error.status = 403;
+      throw error;
+    }
+
+    const [[{ count }]] = await pool.query(
+      "SELECT COUNT(*) AS count FROM post_participants WHERE post_id=?",
+      [postId],
+    );
+
+    if (1 + count >= (post.capacity || 2)) {
+      const error = new Error("capacity exceeded");
+      error.status = 400;
+      throw error;
+    }
+
+    await pool.query(
+      "INSERT INTO post_participants (user_id, post_id) VALUES (?, ?)",
+      [userId, postId],
+    );
+    await syncPostParticipantState(postId, post.capacity, post.status, false);
+  }
+
+  return getPostWithDetails(postId);
+};
+
+export const leavePost = async (userId, postId) => {
+  const post = await getPost(postId);
+  if (!post) return null;
+
+  // Load the user nickname for ownership and system messages.
+  const [[user]] = await pool.query(
+    "SELECT nickname FROM users WHERE user_id = ?",
+    [userId],
+  );
+  if (!user) return null;
+
+  const isAuthor = post.author === user.nickname;
+
+  if (isAuthor) {
+    // If the owner leaves, transfer ownership to the first participant.
+    const [[nextParticipant]] = await pool.query(
+      `SELECT pp.user_id, u.nickname 
+       FROM post_participants pp
+       JOIN users u ON pp.user_id = u.user_id
+       WHERE pp.post_id = ? 
+         AND u.is_deleted = FALSE
+       ORDER BY pp.id ASC LIMIT 1`,
+      [postId],
+    );
+
+    if (nextParticipant) {
+      await pool.query("UPDATE posts SET user_id = ? WHERE post_id = ?", [
+        nextParticipant.user_id,
+        postId,
+      ]);
+      await pool.query(
+        "DELETE FROM post_participants WHERE post_id = ? AND user_id = ?",
+        [postId, nextParticipant.user_id],
+      );
+    } else {
+      // No participant is available to receive ownership.
+    }
+  } else {
+    await pool.query(
+      "DELETE FROM post_participants WHERE post_id = ? AND user_id = ?",
+      [postId, userId],
+    );
+  }
+
+  const wasFull = (post.participants || 1) >= (post.capacity || 2);
+  await syncPostParticipantState(postId, post.capacity, post.status, wasFull);
+
+  return getPostWithDetails(postId);
+};
+
+// comments
+export const getComments = async (postId, viewerId = null) => {
+  const blockedUserIds = await getBlockedUserIds(viewerId);
+  const [rows] = await pool.query(
+    `SELECT c.*, u.nickname
+     FROM comments c
+     JOIN users u ON c.user_id = u.user_id
+     WHERE post_id = ?`,
+    [postId],
+  );
+  return rows.map((row) =>
+    blockedUserIds.has(Number(row.user_id))
+      ? {
+          ...row,
+          nickname: "\ucc28\ub2e8\ud55c \uc0ac\uc6a9\uc790",
+          content:
+            "\ucc28\ub2e8\ud55c \uc0ac\ub78c\uc758 \uba54\uc2dc\uc9c0\uc785\ub2c8\ub2e4",
+        }
+      : row,
+  );
+};
+
+export const createComment = async (data) => {
+  const parentId = data.parent_id || null;
+
+  if (parentId) {
+    const [[parent]] = await pool.query(
+      "SELECT id FROM comments WHERE id = ? AND post_id = ?",
+      [parentId, data.postId],
+    );
+
+    if (!parent) {
+      const error = new Error("invalid parent comment");
+      error.status = 400;
+      throw error;
+    }
+  }
+
+  return pool.query(
+    "INSERT INTO comments (post_id, user_id, content, parent_id, image) VALUES (?, ?, ?, ?, ?)",
+    [data.postId, data.userId, data.content, parentId, data.image],
+  );
+};
+
+export const updateComment = (id, userId, content) =>
+  pool.query(
+    "UPDATE comments SET content=?, edited=1 WHERE id=? AND user_id=?",
+    [content, id, userId],
+  );
+
+export const deleteComment = (id, userId) =>
+  pool.query("DELETE FROM comments WHERE (id=? OR parent_id=?) AND user_id=?", [
+    id,
+    id,
+    userId,
+  ]);
+
+// bans
+export const getKickedPostsForUser = async (userId) => {
+  const [rows] = await pool.query(
+    `SELECT p.* 
+     FROM post_bans pb
+     JOIN posts p ON pb.post_id = p.post_id
+     WHERE pb.user_id = ? AND pb.is_hidden = 0`,
+    [userId],
+  );
+  return Promise.all(rows.map((row) => getPostWithDetails(row.post_id)));
+};
+
+export const deletePostBan = async (userId, postId) => {
+  return pool.query(
+    "UPDATE post_bans SET is_hidden = 1 WHERE user_id = ? AND post_id = ?",
+    [userId, postId],
+  );
+};
