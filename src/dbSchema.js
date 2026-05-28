@@ -60,6 +60,125 @@ const addForeignKeyIfMissing = async (
   );
 };
 
+const deleteByIds = async (connection, sql, ids) => {
+  if (!ids.length) return;
+  await connection.query(sql, [ids]);
+};
+
+const purgeDeletedUsers = async (connection) => {
+  const [deletedUsers] = await connection.query(
+    "SELECT user_id FROM users WHERE is_deleted = TRUE",
+  );
+  const deletedUserIds = deletedUsers.map((user) => user.user_id);
+  if (deletedUserIds.length === 0) return;
+
+  const [authoredPosts] = await connection.query(
+    "SELECT post_id FROM posts WHERE user_id IN (?)",
+    [deletedUserIds],
+  );
+  const [dmRooms] = await connection.query(
+    "SELECT id FROM dm_rooms WHERE user1_id IN (?) OR user2_id IN (?)",
+    [deletedUserIds, deletedUserIds],
+  );
+  const [joinedPosts] = await connection.query(
+    `SELECT DISTINCT pp.post_id
+     FROM post_participants pp
+     JOIN posts p ON p.post_id = pp.post_id
+     WHERE pp.user_id IN (?) AND p.user_id NOT IN (?)`,
+    [deletedUserIds, deletedUserIds],
+  );
+  const roomKeysToDelete = [
+    ...authoredPosts.map((post) => String(post.post_id)),
+    ...dmRooms.map((room) => `dm_${room.id}`),
+  ];
+
+  await deleteByIds(
+    connection,
+    `DELETE mr FROM message_reactions mr
+     JOIN messages m ON mr.message_id = m.id
+     WHERE m.room_id IN (?)`,
+    roomKeysToDelete,
+  );
+  await deleteByIds(
+    connection,
+    `DELETE mrd FROM message_reads mrd
+     JOIN messages m ON mrd.message_id = m.id
+     WHERE m.room_id IN (?)`,
+    roomKeysToDelete,
+  );
+  await deleteByIds(
+    connection,
+    "DELETE FROM messages WHERE room_id IN (?)",
+    roomKeysToDelete,
+  );
+
+  await connection.query(
+    `DELETE mr FROM message_reactions mr
+     JOIN messages m ON mr.message_id = m.id
+     WHERE m.user_id IN (?) OR mr.user_id IN (?)`,
+    [deletedUserIds, deletedUserIds],
+  );
+  await connection.query(
+    `DELETE mrd FROM message_reads mrd
+     JOIN messages m ON mrd.message_id = m.id
+     WHERE m.user_id IN (?) OR mrd.user_id IN (?)`,
+    [deletedUserIds, deletedUserIds],
+  );
+  await connection.query("DELETE FROM messages WHERE user_id IN (?)", [
+    deletedUserIds,
+  ]);
+  await connection.query(
+    "DELETE FROM dm_rooms WHERE user1_id IN (?) OR user2_id IN (?)",
+    [deletedUserIds, deletedUserIds],
+  );
+  await connection.query("DELETE FROM password_reset_tokens WHERE user_id IN (?)", [
+    deletedUserIds,
+  ]);
+  await connection.query("DELETE FROM appointment_completions WHERE user_id IN (?)", [
+    deletedUserIds,
+  ]);
+  await connection.query(
+    "DELETE FROM reports WHERE reporter_id IN (?) OR target_id IN (?)",
+    [deletedUserIds, deletedUserIds],
+  );
+  await connection.query("DELETE FROM post_bans WHERE user_id IN (?)", [
+    deletedUserIds,
+  ]);
+  await connection.query("DELETE FROM post_likes WHERE user_id IN (?)", [
+    deletedUserIds,
+  ]);
+  await connection.query("DELETE FROM comments WHERE user_id IN (?)", [
+    deletedUserIds,
+  ]);
+  await connection.query("DELETE FROM post_participants WHERE user_id IN (?)", [
+    deletedUserIds,
+  ]);
+  for (const post of joinedPosts) {
+    const [[participantCount]] = await connection.query(
+      "SELECT COUNT(*) AS count FROM post_participants WHERE post_id = ?",
+      [post.post_id],
+    );
+    const [[postRow]] = await connection.query(
+      "SELECT capacity FROM posts WHERE post_id = ?",
+      [post.post_id],
+    );
+    if (!postRow) continue;
+    const participants = 1 + Number(participantCount.count || 0);
+    const status =
+      participants >= (postRow.capacity || 2) ? "\ubaa8\uc9d1\uc644\ub8cc" : "\ubaa8\uc9d1\uc911";
+    await connection.query(
+      "UPDATE posts SET participants = ?, status = ? WHERE post_id = ?",
+      [participants, status, post.post_id],
+    );
+  }
+  await connection.query(
+    "DELETE FROM user_relations WHERE requester_id IN (?) OR target_id IN (?)",
+    [deletedUserIds, deletedUserIds],
+  );
+  await connection.query("DELETE FROM posts WHERE user_id IN (?)", [deletedUserIds]);
+  await connection.query("DELETE FROM users WHERE user_id IN (?)", [deletedUserIds]);
+};
+
 export const ensureRuntimeSchema = async () => {
   const connection = await pool.getConnection();
 
@@ -89,7 +208,46 @@ export const ensureRuntimeSchema = async () => {
       )`,
     );
 
+    await connection.query(
+      `CREATE TABLE IF NOT EXISTS password_reset_tokens (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        user_id INT NOT NULL,
+        token_hash VARCHAR(255) NOT NULL,
+        expires_at DATETIME NOT NULL,
+        used_at DATETIME NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        INDEX idx_password_reset_tokens_token_hash (token_hash),
+        INDEX idx_password_reset_tokens_user_id (user_id),
+        FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
+      )`,
+    );
+
+    await connection.query(
+      `CREATE TABLE IF NOT EXISTS post_bans (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        post_id INT NOT NULL,
+        user_id INT NOT NULL,
+        is_hidden BOOLEAN DEFAULT FALSE,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE KEY uq_ban (post_id, user_id),
+        FOREIGN KEY (post_id) REFERENCES posts(post_id) ON DELETE CASCADE,
+        FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
+      )`,
+    );
+
     await addColumnIfMissing(connection, "users", "report_count", "INT DEFAULT 0");
+    await addColumnIfMissing(connection, "users", "is_verified", "BOOLEAN DEFAULT FALSE");
+    await connection.query(
+      `CREATE TABLE IF NOT EXISTS email_verification_tokens (
+        id         INT AUTO_INCREMENT PRIMARY KEY,
+        user_id    INT NOT NULL,
+        token_hash VARCHAR(255) NOT NULL,
+        expires_at DATETIME NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE,
+        UNIQUE KEY uq_token_hash (token_hash)
+      )`,
+    );
     await addColumnIfMissing(connection, "posts", "report_count", "INT DEFAULT 0");
     await addColumnIfMissing(
       connection,
@@ -183,6 +341,8 @@ export const ensureRuntimeSchema = async () => {
       "fk_reports_comment_id",
       "FOREIGN KEY (comment_id) REFERENCES comments(id) ON DELETE CASCADE",
     );
+
+    await purgeDeletedUsers(connection);
   } finally {
     connection.release();
   }

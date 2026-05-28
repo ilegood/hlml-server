@@ -34,12 +34,18 @@ const getUpcomingAppointmentReminders = async (minutesBefore) => {
        p.place,
        members.user_id AS userId
      FROM posts p
+     JOIN users author ON author.user_id = p.user_id AND author.is_deleted = FALSE
      JOIN (
-       SELECT post_id, user_id FROM posts
+       SELECT p2.post_id, p2.user_id
+       FROM posts p2
+       JOIN users u ON u.user_id = p2.user_id AND u.is_deleted = FALSE
        UNION
-       SELECT post_id, user_id FROM post_participants
+       SELECT pp.post_id, pp.user_id
+       FROM post_participants pp
+       JOIN users u ON u.user_id = pp.user_id AND u.is_deleted = FALSE
      ) members ON members.post_id = p.post_id
      WHERE p.date IS NOT NULL
+       AND p.is_deleted = 0
        AND p.time IS NOT NULL
        AND TIMESTAMP(p.date, p.time) >= ?
        AND TIMESTAMP(p.date, p.time) < ?`,

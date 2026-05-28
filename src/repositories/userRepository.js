@@ -2,34 +2,34 @@ import pool from "../db.js";
 
 export const findUserByEmail = async (email) => {
   const [rows] = await pool.query(
-    "SELECT user_id, nickname, email, password, bio, profile_img FROM users WHERE email = ?",
+    "SELECT user_id, nickname, email, password, bio, profile_img, is_verified FROM users WHERE email = ? AND is_deleted = FALSE",
     [email],
   );
   return rows[0];
 };
 
-export const createUser = async (nickname, email, hashedPassword, birthday, gender, phoneNumber) => {
+export const createUser = async (nickname, email, hashedPassword, birthday, gender, phoneNumber, isVerified = false) => {
   const [result] = await pool.query(
-    `INSERT INTO users (nickname, email, password, birthday, gender, phone_number)
-     VALUES (?, ?, ?, ?, ?, ?)`,
-    [nickname, email, hashedPassword, birthday, gender, phoneNumber]
+    `INSERT INTO users (nickname, email, password, birthday, gender, phone_number, is_verified)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    [nickname, email, hashedPassword, birthday, gender, phoneNumber, isVerified]
   );
   return result;
 };
 
 export const findUserById = async (userId) => {
-  const [rows] = await pool.query("SELECT user_id, nickname, email, bio, profile_img FROM users WHERE user_id = ?", [userId]);
+  const [rows] = await pool.query("SELECT user_id, nickname, email, bio, profile_img, is_verified FROM users WHERE user_id = ? AND is_deleted = FALSE", [userId]);
   return rows[0];
 };
 
 export const findUserByIdWithPassword = async (userId) => {
-  const [rows] = await pool.query("SELECT user_id, nickname, email, bio, profile_img, password FROM users WHERE user_id = ?", [userId]);
+  const [rows] = await pool.query("SELECT user_id, nickname, email, bio, profile_img, password, is_verified FROM users WHERE user_id = ? AND is_deleted = FALSE", [userId]);
   return rows[0];
 };
 
 export const findUserByNickname = async (nickname, excludeUserId = null) => {
   const params = [nickname];
-  let query = "SELECT user_id FROM users WHERE nickname = ?";
+  let query = "SELECT user_id FROM users WHERE nickname = ? AND is_deleted = FALSE";
   if (excludeUserId) {
     query += " AND user_id != ?";
     params.push(excludeUserId);
@@ -44,6 +44,38 @@ export const updateUserProfile = async (userId, nickname, bio, hashedPassword, p
     [nickname, bio, hashedPassword, profileImg, userId]
   );
   return result.affectedRows;
+};
+
+export const createVerificationToken = async (userId, tokenHash, expiresAt) => {
+  await pool.query(
+    "INSERT INTO email_verification_tokens (user_id, token_hash, expires_at) VALUES (?, ?, ?)",
+    [userId, tokenHash, expiresAt]
+  );
+};
+
+export const findVerificationTokenByHash = async (tokenHash) => {
+  const [rows] = await pool.query(
+    `SELECT evt.user_id, u.email
+     FROM email_verification_tokens evt
+     JOIN users u ON evt.user_id = u.user_id
+     WHERE evt.token_hash = ? AND evt.expires_at > NOW()`,
+    [tokenHash]
+  );
+  return rows[0];
+};
+
+export const verifyUser = async (userId) => {
+  await pool.query(
+    "UPDATE users SET is_verified = TRUE WHERE user_id = ?",
+    [userId]
+  );
+};
+
+export const deleteVerificationToken = async (tokenHash) => {
+  await pool.query(
+    "DELETE FROM email_verification_tokens WHERE token_hash = ?",
+    [tokenHash]
+  );
 };
 
 export const searchUsers = async (query, myId) => {

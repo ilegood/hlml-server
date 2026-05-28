@@ -97,8 +97,8 @@ export const registerRoomSocket = (io, socket) => {
              p.status,
              u.nickname AS author
            FROM posts p
-           JOIN users u ON p.user_id = u.user_id
-           WHERE p.post_id = ?`,
+           JOIN users u ON p.user_id = u.user_id AND u.is_deleted = FALSE
+           WHERE p.post_id = ? AND p.is_deleted = 0`,
           [roomIdInt],
         );
 
@@ -147,7 +147,15 @@ export const registerRoomSocket = (io, socket) => {
 
             // Send entrance alarm to all participants
             const [members] = await query(
-              "SELECT user_id FROM post_participants WHERE post_id = ? UNION SELECT user_id FROM posts WHERE post_id = ?",
+              `SELECT pp.user_id
+               FROM post_participants pp
+               JOIN users u ON u.user_id = pp.user_id
+               WHERE pp.post_id = ? AND u.is_deleted = FALSE
+               UNION
+               SELECT p.user_id
+               FROM posts p
+               JOIN users u ON u.user_id = p.user_id
+               WHERE p.post_id = ? AND p.is_deleted = 0 AND u.is_deleted = FALSE`,
               [roomIdInt, roomIdInt],
             );
 
@@ -240,8 +248,8 @@ export const registerRoomSocket = (io, socket) => {
         const [[post]] = await query(
           `SELECT p.post_id, u.nickname AS author
            FROM posts p
-           JOIN users u ON p.user_id = u.user_id
-           WHERE p.post_id = ?`,
+           JOIN users u ON p.user_id = u.user_id AND u.is_deleted = FALSE
+           WHERE p.post_id = ? AND p.is_deleted = 0`,
           [roomIdInt],
         );
         const [[user]] = await query(
