@@ -8,9 +8,9 @@ export const findAcceptedFriends = async (userId) => {
        u.user_id as id,
        u.nickname as name,
        u.profile_img,
-       u.bio as statusMessage,
-       'online' as status,
-       CASE
+        u.bio as statusMessage,
+        'online' as status,
+        CASE
          WHEN r.requester_id = ? THEN r.requester_memo
          ELSE r.target_memo
        END as memo
