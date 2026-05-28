@@ -162,31 +162,7 @@ export const joinPost = async (req, res) => {
   try {
     const data = await postService.joinPost(req.userId, req.params.id);
     if (!data) return res.status(404).json({ message: "not found" });
-
-    const io = req.app.get("io");
-    if (io && data.systemMessage) {
-      const roomStr = String(req.params.id);
-      io.to(roomStr).emit("receive_message", data.systemMessage);
-
-      // Send entrance alarm to all participants
-      if (data.systemMessage.content.includes("들어왔습니다")) {
-        const members = [
-          data.post.user_id,
-          ...(data.post.joinedUserIds || []),
-        ];
-        members.forEach((memberId) => {
-          if (String(memberId) !== String(req.userId)) {
-            io.to(`user_${memberId}`).emit("entrance_alarm", {
-              roomId: roomStr,
-              roomTitle: data.post.title,
-              message: data.systemMessage.content,
-            });
-          }
-        });
-      }
-    }
-
-    res.json(data.post);
+    res.json(data);
   } catch (e) {
     console.error(e);
     res.status(e.status || 500).json({ message: "join error" });
@@ -197,13 +173,7 @@ export const leavePost = async (req, res) => {
   try {
     const data = await postService.leavePost(req.userId, req.params.id);
     if (!data) return res.status(404).json({ message: "not found" });
-
-    const io = req.app.get("io");
-    if (io && data.systemMessage) {
-      io.to(String(req.params.id)).emit("receive_message", data.systemMessage);
-    }
-
-    res.json(data.post);
+    res.json(data);
   } catch (e) {
     console.error(e);
     res.status(500).json({ message: "leave error" });

@@ -639,12 +639,6 @@ export const leavePost = async (userId, postId) => {
   const wasFull = (post.participants || 1) >= (post.capacity || 2);
   await syncPostParticipantState(postId, post.capacity, post.status, wasFull);
 
-  const leaveMsgContent = `${user.nickname}\ub2d8\uc774 \ud1f4\uc7a5\ud558\uc168\uc2b5\ub2c8\ub2e4.`;
-  await pool.query(
-    "INSERT INTO messages (room_id, user_id, nickname, content, is_system) VALUES (?, ?, ?, ?, ?)",
-    [postId, userId, "System", leaveMsgContent, 1],
-  );
-
   return getPostWithDetails(postId);
 };
 

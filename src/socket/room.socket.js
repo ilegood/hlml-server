@@ -200,6 +200,24 @@ export const registerRoomSocket = (io, socket) => {
     const roomStr = String(roomId);
 
     try {
+      if (nickname) {
+        const joinMsgOld = `${nickname}님이 들어왔습니다.`;
+        const leaveMsgContent = `${nickname}님이 퇴장하셨습니다.`;
+
+        // 기존 입장 메시지 삭제 → 재입장 시 NOT EXISTS에 막히지 않음
+        await query(
+          "DELETE FROM messages WHERE room_id = ? AND user_id = ? AND is_system = 1 AND content = ?",
+          [roomStr, userIdInt, joinMsgOld],
+        );
+
+        const message = await saveSystemMessage({
+          roomId: roomStr,
+          userId: userIdInt,
+          content: leaveMsgContent,
+        });
+        io.to(roomStr).emit("receive_message", message);
+      }
+
       socket.leave(roomStr);
       if (typeof ack === "function") ack({ ok: true });
     } catch (error) {
