@@ -20,7 +20,9 @@ export const auth = (req, res, next) => {
     req.userId = decoded.userId ?? decoded.user_id ?? decoded.sub;
 
     if (!req.userId) {
-      return res.status(401).json({ message: "유효한 사용자 정보를 찾을 수 없습니다." });
+      return res
+        .status(401)
+        .json({ message: "유효한 사용자 정보를 찾을 수 없습니다." });
     }
 
     next();

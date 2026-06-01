@@ -19,9 +19,11 @@ const getSeoulDateTimeString = (offsetMinutes = 0) => {
   return `${values.year}-${values.month}-${values.day} ${values.hour}:${values.minute}:${values.second}`;
 };
 
-const getUpcomingAppointmentReminders = async () => {
-  const windowStart = getSeoulDateTimeString(30);
-  const windowEnd = getSeoulDateTimeString(31);
+const REMINDER_INTERVALS = [30, 20, 10];
+
+const getUpcomingAppointmentReminders = async (minutesBefore) => {
+  const windowStart = getSeoulDateTimeString(minutesBefore);
+  const windowEnd = getSeoulDateTimeString(minutesBefore + 1);
 
   const [rows] = await pool.query(
     `SELECT DISTINCT
@@ -32,12 +34,18 @@ const getUpcomingAppointmentReminders = async () => {
        p.place,
        members.user_id AS userId
      FROM posts p
+     JOIN users author ON author.user_id = p.user_id AND author.is_deleted = FALSE
      JOIN (
-       SELECT post_id, user_id FROM posts
+       SELECT p2.post_id, p2.user_id
+       FROM posts p2
+       JOIN users u ON u.user_id = p2.user_id AND u.is_deleted = FALSE
        UNION
-       SELECT post_id, user_id FROM post_participants
+       SELECT pp.post_id, pp.user_id
+       FROM post_participants pp
+       JOIN users u ON u.user_id = pp.user_id AND u.is_deleted = FALSE
      ) members ON members.post_id = p.post_id
      WHERE p.date IS NOT NULL
+       AND p.is_deleted = 0
        AND p.time IS NOT NULL
        AND TIMESTAMP(p.date, p.time) >= ?
        AND TIMESTAMP(p.date, p.time) < ?`,
@@ -49,22 +57,25 @@ const getUpcomingAppointmentReminders = async () => {
 
 const sendAppointmentReminders = async (io) => {
   try {
-    const reminders = await getUpcomingAppointmentReminders();
+    for (const minutesBefore of REMINDER_INTERVALS) {
+      const reminders = await getUpcomingAppointmentReminders(minutesBefore);
 
-    reminders.forEach((row) => {
-      io.to(`user_${row.userId}`).emit("appointment_reminder", {
-        id: `reminder:${row.roomId}`,
-        type: "appointment",
-        roomId: row.roomId,
-        title: row.title || "약속",
-        date: row.date,
-        time: row.time,
-        place: row.place,
+      reminders.forEach((row) => {
+        io.to(`user_${row.userId}`).emit("appointment_reminder", {
+          id: `reminder:${row.roomId}:${minutesBefore}`,
+          type: "appointment",
+          roomId: row.roomId,
+          title: row.title || "약속",
+          date: row.date,
+          time: row.time,
+          place: row.place,
+          remainingMinutes: minutesBefore,
+        });
       });
-    });
 
-    if (reminders.length > 0) {
-      console.log(`Sent appointment reminders to ${reminders.length} user(s).`);
+      if (reminders.length > 0) {
+        console.log(`Sent ${minutesBefore}min reminders to ${reminders.length} user(s).`);
+      }
     }
   } catch (error) {
     console.error("Error sending appointment reminders:", error);

@@ -10,6 +10,7 @@ const router = express.Router();
 
 // routes
 router.get("/", optionalAuth, postController.getPosts);
+router.get("/my-rooms", auth, postController.getMyChatRooms);
 router.get("/kicked", auth, postController.getKickedPosts);
 router.get("/:id", optionalAuth, postController.getPost);
 

@@ -1,7 +1,6 @@
 import { query } from "../db.js";
 import { toUtcIsoString } from "../utils/time.js";
 import { parseJsonArray, toInt } from "./utils.js";
-import { STATUS_OPEN, STATUS_CLOSED } from "../config/constants.js";
 
 const formatMessageRows = (rows) =>
   rows.map((row) => ({
@@ -22,6 +21,31 @@ export const registerRoomSocket = (io, socket) => {
       "INSERT INTO messages (room_id, user_id, nickname, content, is_system) VALUES (?, ?, ?, ?, ?)",
       [roomId, userId, "System", content, 1],
     );
+
+    return {
+      id: result.insertId,
+      roomId: String(roomId),
+      userId,
+      nickname: "System",
+      content,
+      isSystem: true,
+      created_at: new Date().toISOString(),
+    };
+  };
+
+  const saveSystemMessageIfMissing = async ({ roomId, userId, content }) => {
+    const [result] = await query(
+      `INSERT INTO messages (room_id, user_id, nickname, content, is_system)
+       SELECT ?, ?, ?, ?, ?
+       FROM DUAL
+       WHERE NOT EXISTS (
+         SELECT 1 FROM messages
+         WHERE room_id = ? AND user_id = ? AND is_system = 1 AND content = ?
+       )`,
+      [roomId, userId, "System", content, 1, roomId, userId, content],
+    );
+
+    if (result.affectedRows === 0) return null;
 
     return {
       id: result.insertId,
@@ -85,10 +109,21 @@ export const registerRoomSocket = (io, socket) => {
         }
 
         const [roomRows] = await query(
-          `SELECT p.title, p.image, p.place, p.latitude, p.longitude, u.nickname AS author
+          `SELECT
+             p.title,
+             p.image,
+             p.date,
+             p.time,
+             p.place,
+             p.latitude,
+             p.longitude,
+             p.capacity,
+             p.participants,
+             p.status,
+             u.nickname AS author
            FROM posts p
-           JOIN users u ON p.user_id = u.user_id
-           WHERE p.post_id = ?`,
+           JOIN users u ON p.user_id = u.user_id AND u.is_deleted = FALSE
+           WHERE p.post_id = ? AND p.is_deleted = 0`,
           [roomIdInt],
         );
 
@@ -97,28 +132,67 @@ export const registerRoomSocket = (io, socket) => {
             title: roomRows[0].title,
             image: roomRows[0].image,
             author: roomRows[0].author,
+            date: roomRows[0].date,
+            time: roomRows[0].time,
             place: roomRows[0].place,
             latitude: roomRows[0].latitude,
             longitude: roomRows[0].longitude,
+            capacity: roomRows[0].capacity,
+            participants: roomRows[0].participants,
+            status: roomRows[0].status,
             isDM: false,
           });
         }
 
         if (nickname && userIdInt) {
-          const joinMsgContent = `${nickname}\ub2d8\uc774 \uc785\uc7a5\ud558\uc168\uc2b5\ub2c8\ub2e4.`;
-          const [existing] = await query(
-            "SELECT id FROM messages WHERE room_id = ? AND user_id = ? AND is_system = 1 AND content = ?",
-            [roomStr, userIdInt, joinMsgContent],
+          const joinMsgContent = `${nickname}님이 들어왔습니다.`;
+          const [result] = await query(
+            `INSERT INTO messages (room_id, user_id, nickname, content, is_system)
+             SELECT ?, ?, ?, ?, ?
+             FROM DUAL
+             WHERE NOT EXISTS (
+               SELECT 1 FROM messages
+               WHERE room_id = ? AND user_id = ? AND is_system = 1 AND content = ?
+             )`,
+            [roomStr, userIdInt, "System", joinMsgContent, 1, roomStr, userIdInt, joinMsgContent],
           );
 
-          if (existing.length === 0) {
-            const message = await saveSystemMessage({
-              roomId: roomStr,
+          if (result.affectedRows > 0) {
+            const message = {
+              id: result.insertId,
+              roomId: String(roomStr),
               userId: userIdInt,
+              nickname: "System",
               content: joinMsgContent,
-            });
+              isSystem: true,
+              created_at: new Date().toISOString(),
+            };
 
             io.to(roomStr).emit("receive_message", message);
+
+            // Send entrance alarm to all participants
+            const [members] = await query(
+              `SELECT pp.user_id
+               FROM post_participants pp
+               JOIN users u ON u.user_id = pp.user_id
+               WHERE pp.post_id = ? AND u.is_deleted = FALSE
+               UNION
+               SELECT p.user_id
+               FROM posts p
+               JOIN users u ON u.user_id = p.user_id
+               WHERE p.post_id = ? AND p.is_deleted = 0 AND u.is_deleted = FALSE`,
+              [roomIdInt, roomIdInt],
+            );
+
+            members.forEach((member) => {
+              if (String(member.user_id) !== String(userIdInt)) {
+                io.to(`user_${member.user_id}`).emit("entrance_alarm", {
+                  roomId: roomStr,
+                  roomTitle: roomRows[0].title,
+                  message: joinMsgContent,
+                });
+              }
+            });
           }
         }
       }
@@ -159,6 +233,26 @@ export const registerRoomSocket = (io, socket) => {
     const roomStr = String(roomId);
 
     try {
+      if (nickname) {
+        const joinMsgOld = `${nickname}님이 들어왔습니다.`;
+        const leaveMsgContent = `${nickname}님이 퇴장하셨습니다.`;
+
+        // 기존 입장 메시지 삭제 → 재입장 시 NOT EXISTS에 막히지 않음
+        await query(
+          "DELETE FROM messages WHERE room_id = ? AND user_id = ? AND is_system = 1 AND content = ?",
+          [roomStr, userIdInt, joinMsgOld],
+        );
+
+        const message = await saveSystemMessageIfMissing({
+          roomId: roomStr,
+          userId: userIdInt,
+          content: leaveMsgContent,
+        });
+        if (message) {
+          io.to(roomStr).emit("receive_message", message);
+        }
+      }
+
       socket.leave(roomStr);
       if (typeof ack === "function") ack({ ok: true });
     } catch (error) {
@@ -179,12 +273,19 @@ export const registerRoomSocket = (io, socket) => {
 
       try {
         const [[post]] = await query(
-          "SELECT user_id FROM posts WHERE post_id = ?",
+          `SELECT p.post_id, u.nickname AS author
+           FROM posts p
+           JOIN users u ON p.user_id = u.user_id AND u.is_deleted = FALSE
+           WHERE p.post_id = ? AND p.is_deleted = 0`,
           [roomIdInt],
         );
+        const [[user]] = await query(
+          "SELECT nickname FROM users WHERE user_id = ?",
+          [myUserIdInt],
+        );
 
-        if (!post || Number(post.user_id) !== myUserIdInt) {
-          socket.emit("error_message", "방장만 강퇴할 수 있습니다.");
+        if (!post || !user || post.author !== user.nickname) {
+          socket.emit("error_message", "Only the room owner can kick users.");
           return;
         }
 
@@ -208,16 +309,16 @@ export const registerRoomSocket = (io, socket) => {
         const wasFull =
           (postCapacity?.participants || 1) >= (postCapacity?.capacity || 2);
         const status =
-          (postCapacity?.status === STATUS_CLOSED && !wasFull) ||
+          (postCapacity?.status === "\ubaa8\uc9d1\uc644\ub8cc" && !wasFull) ||
           participants >= (postCapacity?.capacity || 2)
-            ? STATUS_CLOSED
-            : STATUS_OPEN;
+            ? "\ubaa8\uc9d1\uc644\ub8cc"
+            : "\ubaa8\uc9d1\uc911";
         await query(
           "UPDATE posts SET participants = ?, status = ? WHERE post_id = ?",
           [participants, status, roomIdInt],
         );
 
-        const kickMsgContent = `${targetNickname}님이 강퇴되었습니다.`;
+        const kickMsgContent = `${targetNickname}\ub2d8\uc774 \uac15\ud1f4\ub418\uc5c8\uc2b5\ub2c8\ub2e4.`;
         const message = await saveSystemMessage({
           roomId: roomStr,
           userId: targetUserIdInt,

@@ -4,23 +4,49 @@ import { STATUS_OPEN, STATUS_CLOSED } from "../config/constants.js";
 
 const DELETED_MESSAGE_CONTENT = "삭제된 메시지입니다.";
 
+let messagesColumnsEnsured = false;
+
+const ensureMessagesColumns = async () => {
+  if (messagesColumnsEnsured) return;
+  try {
+    await pool.query("ALTER TABLE messages ADD COLUMN is_deleted BOOLEAN DEFAULT FALSE");
+  } catch (err) {
+    if (err.errno !== 1060) console.warn("Failed to add messages column:", err.message);
+  }
+  try {
+    await pool.query("ALTER TABLE messages ADD COLUMN is_edited BOOLEAN DEFAULT FALSE");
+  } catch (err) {
+    if (err.errno !== 1060) console.warn("Failed to add is_edited column:", err.message);
+  }
+  messagesColumnsEnsured = true;
+};
+
 const getRoomMemberIds = async (roomStr) => {
   if (roomStr.startsWith("dm_")) {
     const dmRoomId = Number(roomStr.slice(3));
-    const [[room]] = await pool.query(
-      "SELECT user1_id, user2_id FROM dm_rooms WHERE id = ?",
+    const [rows] = await pool.query(
+      `SELECT u.user_id
+       FROM dm_rooms dr
+       JOIN users u ON u.user_id IN (dr.user1_id, dr.user2_id)
+       WHERE dr.id = ? AND u.is_deleted = FALSE`,
       [dmRoomId],
     );
-    return room ? [Number(room.user1_id), Number(room.user2_id)] : [];
+    return rows.map((row) => Number(row.user_id));
   }
 
   const roomId = Number(roomStr);
   if (!roomId) return [];
 
   const [rows] = await pool.query(
-    `SELECT user_id FROM posts WHERE post_id = ?
+    `SELECT p.user_id
+     FROM posts p
+     JOIN users u ON u.user_id = p.user_id
+     WHERE p.post_id = ? AND p.is_deleted = 0 AND u.is_deleted = FALSE
      UNION
-     SELECT user_id FROM post_participants WHERE post_id = ?`,
+     SELECT pp.user_id
+     FROM post_participants pp
+     JOIN users u ON u.user_id = pp.user_id
+     WHERE pp.post_id = ? AND u.is_deleted = FALSE`,
     [roomId, roomId],
   );
   return rows.map((row) => Number(row.user_id));
@@ -117,6 +143,8 @@ export const registerMessageSocket = (io, socket) => {
     const userIdInt = toInt(socket.data.userId);
     if (!roomStr || !messageId || !userIdInt || !content?.trim()) return;
 
+    await ensureMessagesColumns();
+
     try {
       const [result] = await pool.query(
         `UPDATE messages
@@ -139,6 +167,8 @@ export const registerMessageSocket = (io, socket) => {
     const roomStr = String(roomId);
     const userIdInt = toInt(socket.data.userId);
     if (!roomStr || !messageId || !userIdInt) return;
+
+    await ensureMessagesColumns();
 
     try {
       const [result] = await pool.query(
@@ -185,6 +215,18 @@ export const registerMessageSocket = (io, socket) => {
     } catch (error) {
       console.error("Failed to update reaction:", error);
     }
+  });
+
+  socket.on("typing", ({ roomId, nickname }) => {
+    const roomStr = String(roomId);
+    if (!roomStr) return;
+    socket.to(roomStr).emit("typing", { nickname });
+  });
+
+  socket.on("stop_typing", ({ roomId }) => {
+    const roomStr = String(roomId);
+    if (!roomStr) return;
+    socket.to(roomStr).emit("stop_typing");
   });
 
   socket.on("mark_read", async ({ messageId, userId, roomId }) => {
