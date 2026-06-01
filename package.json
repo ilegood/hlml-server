@@ -2,20 +2,17 @@
   "name": "hlml-server",
   "version": "1.0.0",
   "description": "HLML server",
-  "homepage": "https://github.com/ilegood/hlml-server#readme",
-  "bugs": {
-    "url": "https://github.com/ilegood/hlml-server/issues"
-  },
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/ilegood/hlml-server.git"
-  },
   "license": "ISC",
   "author": "",
   "type": "module",
   "scripts": {
+<<<<<<< Updated upstream
     "dev": "nodemon ./src/app.js",
     "start": "node ./src/app.js"
+=======
+    "dev": "nodemon src/app.js",
+    "start": "node src/app.js"
+>>>>>>> Stashed changes
   },
   "dependencies": {
     "bcrypt": "^6.0.0",
@@ -33,6 +30,7 @@
     "socket.io": "^4.8.3"
   },
   "devDependencies": {
+    "@flydotio/dockerfile": "^0.7.10",
     "nodemon": "^3.1.14"
   }
 }
