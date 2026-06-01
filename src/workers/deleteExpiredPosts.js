@@ -207,16 +207,7 @@ const deleteExpiredPosts = async (io) => {
     }
 
     const postIds = expiredPosts.map((post) => post.post_id);
-    const roomIds = postIds.map(String);
-    cloudinaryAssets = await collectCloudinaryAssets(connection, postIds);
     await recordCompletedAppointments(connection, postIds, now);
-    deletedPosts = await Promise.all(
-      expiredPosts.map(async (post) => ({
-        roomId: String(post.post_id),
-        title: post.title || "약속 게시글",
-        memberIds: await getPostMemberIds(connection, post.post_id),
-      })),
-    );
 
     // Update is_deleted = 1 instead of physical deletion
     await connection.query(
