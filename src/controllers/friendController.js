@@ -1,10 +1,5 @@
 import * as friendService from "../services/friendService.js";
-
-const sendError = (res, error, fallbackMessage) => {
-  res.status(error.status || 500).json({
-    message: error.status ? error.message : fallbackMessage,
-  });
-};
+import { sendError } from "../utils/http.js";
 
 export const getFriends = async (req, res) => {
   try {

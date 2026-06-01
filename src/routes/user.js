@@ -14,7 +14,6 @@ import {
   updateProfile,
   searchUsersController,
   deleteUserController,
-  getUserStats,
   verifyEmail,
   resendVerificationEmail,
 } from "../controllers/userController.js";
@@ -30,7 +29,6 @@ router.post("/resend-verification-email", resendVerificationEmail);
 router.get("/register/check", checkRegistrationAvailability);
 router.get("/profile", auth, getProfile);
 router.get("/me/stats", auth, getMyStats);
-router.get("/me/stats", auth, getUserStats);
 router.get("/search", auth, searchUsersController);
 router.patch("/profile", auth, upload.single("profile_img"), updateProfile);
 router.delete("/", auth, deleteUserController);

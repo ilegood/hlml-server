@@ -13,7 +13,6 @@ import {
   updateUserProfile,
   searchUsers,
   deleteUserById,
-  findUserStats,
   createVerificationToken,
   findVerificationTokenByHash,
   verifyUser as verifyUserInDb, // Renamed to avoid conflict with controller function
@@ -401,7 +400,7 @@ export const requestPasswordReset = async (req, res) => {
     }
 
     const token = crypto.randomBytes(32).toString("hex");
-    const tokenHash = hashResetToken(token);
+    const tokenHash = hashToken(token);
     const expiresAt = new Date(Date.now() + 30 * 60 * 1000);
 
     await pool.query(
@@ -440,7 +439,7 @@ export const resetPassword = async (req, res) => {
   const connection = await pool.getConnection();
 
   try {
-    const tokenHash = hashResetToken(token);
+    const tokenHash = hashToken(token);
     const [rows] = await connection.query(
       `SELECT
          prt.id,
@@ -627,16 +626,6 @@ export const searchUsersController = async (req, res) => {
   try {
     const users = await searchUsers(q, myId);
     res.json(users);
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: "Internal server error" });
-  }
-};
-
-export const getUserStats = async (req, res) => {
-  try {
-    const stats = await findUserStats(req.userId);
-    res.json(stats || { posts: 0, appointments: 0, reports: 0 });
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: "Internal server error" });

@@ -14,7 +14,13 @@
   "author": "",
   "type": "module",
   "scripts": {
+<<<<<<< Updated upstream
     "dev": "nodemon ./src/app.js"
+=======
+    "dev": "nodemon src/app.js",
+    "start": "node src/app.js",
+    "check": "node scripts/check-syntax.mjs"
+>>>>>>> Stashed changes
   },
   "dependencies": {
     "bcrypt": "^6.0.0",

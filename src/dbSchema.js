@@ -208,6 +208,43 @@ export const ensureRuntimeSchema = async () => {
       )`,
     );
 
+    await addColumnIfMissing(connection, "posts", "is_deleted", "BOOLEAN DEFAULT FALSE");
+    await addColumnIfMissing(
+      connection,
+      "messages",
+      "is_deleted",
+      "BOOLEAN DEFAULT FALSE",
+    );
+    await addColumnIfMissing(
+      connection,
+      "messages",
+      "is_edited",
+      "BOOLEAN DEFAULT FALSE",
+    );
+
+    await connection.query(
+      `CREATE TABLE IF NOT EXISTS message_reactions (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        message_id INT NOT NULL,
+        user_id INT NOT NULL,
+        emoji VARCHAR(50) NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE KEY uq_reaction (message_id, user_id, emoji),
+        INDEX idx_message_reactions_user_id (user_id)
+      )`,
+    );
+
+    await connection.query(
+      `CREATE TABLE IF NOT EXISTS message_reads (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        message_id INT NOT NULL,
+        user_id INT NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE KEY uq_read (message_id, user_id),
+        INDEX idx_message_reads_user_id (user_id)
+      )`,
+    );
+
     await connection.query(
       `CREATE TABLE IF NOT EXISTS password_reset_tokens (
         id INT AUTO_INCREMENT PRIMARY KEY,

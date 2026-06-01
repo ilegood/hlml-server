@@ -91,17 +91,6 @@ export const searchUsers = async (query, myId) => {
   return rows;
 };
 
-export const findUserStats = async (userId) => {
-  const [[rows]] = await pool.query(
-    `SELECT
-       (SELECT COUNT(*) FROM posts WHERE user_id = ? AND is_deleted = FALSE) AS posts,
-       (SELECT COUNT(*) FROM post_participants WHERE user_id = ?) AS appointments,
-       COALESCE((SELECT report_count FROM users WHERE user_id = ?), 0) AS reports`,
-    [userId, userId, userId]
-  );
-  return rows;
-};
-
 export const deleteUserById = async (userId, connection) => {
   const [result] = await connection.query(
     "DELETE FROM users WHERE user_id = ?",
