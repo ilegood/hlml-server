@@ -33,6 +33,31 @@ export const registerRoomSocket = (io, socket) => {
     };
   };
 
+  const saveSystemMessageIfMissing = async ({ roomId, userId, content }) => {
+    const [result] = await query(
+      `INSERT INTO messages (room_id, user_id, nickname, content, is_system)
+       SELECT ?, ?, ?, ?, ?
+       FROM DUAL
+       WHERE NOT EXISTS (
+         SELECT 1 FROM messages
+         WHERE room_id = ? AND user_id = ? AND is_system = 1 AND content = ?
+       )`,
+      [roomId, userId, "System", content, 1, roomId, userId, content],
+    );
+
+    if (result.affectedRows === 0) return null;
+
+    return {
+      id: result.insertId,
+      roomId: String(roomId),
+      userId,
+      nickname: "System",
+      content,
+      isSystem: true,
+      created_at: new Date().toISOString(),
+    };
+  };
+
   socket.on("join_room", async ({ roomId, nickname, userId }) => {
     console.log("Received join_room event for roomId:", roomId, "by user:", userId);
     const userIdInt = toInt(userId);
@@ -218,12 +243,14 @@ export const registerRoomSocket = (io, socket) => {
           [roomStr, userIdInt, joinMsgOld],
         );
 
-        const message = await saveSystemMessage({
+        const message = await saveSystemMessageIfMissing({
           roomId: roomStr,
           userId: userIdInt,
           content: leaveMsgContent,
         });
-        io.to(roomStr).emit("receive_message", message);
+        if (message) {
+          io.to(roomStr).emit("receive_message", message);
+        }
       }
 
       socket.leave(roomStr);
