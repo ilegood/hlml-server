@@ -36,25 +36,3 @@ export const sendPasswordResetEmail = async ({ to, resetUrl }) => {
 
   return { sent: true };
 };
-
-export const sendVerificationEmail = async ({ to, verificationUrl }) => {
-  if (!isMailConfigured()) {
-    console.info("[email-verification] Mail is not configured. Verification URL:", verificationUrl);
-    return { sent: false };
-  }
-
-  const transporter = createTransporter();
-  await transporter.sendMail({
-    from: env.mail.from,
-    to,
-    subject: "HLML 이메일 주소 인증",
-    text: `HLML 가입을 완료하려면 아래 링크를 클릭하여 이메일 주소를 인증해주세요.\n\n${verificationUrl}\n\n이 링크는 24시간 동안만 유효합니다.`,
-    html: `
-      <p>HLML 가입을 완료하려면 아래 버튼을 클릭하여 이메일 주소를 인증해주세요.</p>
-      <p><a href="${verificationUrl}">이메일 주소 인증하기</a></p>
-      <p>이 링크는 24시간 동안만 유효합니다.</p>
-    `,
-  });
-
-  return { sent: true };
-};

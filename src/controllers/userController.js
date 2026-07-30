@@ -13,10 +13,6 @@ import {
   updateUserProfile,
   searchUsers,
   deleteUserById,
-  createVerificationToken,
-  findVerificationTokenByHash,
-  verifyUser as verifyUserInDb, // Renamed to avoid conflict with controller function
-  deleteVerificationToken,
 } from "../repositories/userRepository.js";
 import {
   getJoinedPostsForUser,
@@ -24,7 +20,7 @@ import {
   countPostParticipants,
   updatePostParticipantsAndStatus,
 } from "../repositories/postRepository.js";
-import { sendPasswordResetEmail, sendVerificationEmail } from "../utils/mail.js";
+import { sendPasswordResetEmail } from "../utils/mail.js";
 
 const getSeoulDateTimeString = () => {
   const parts = new Intl.DateTimeFormat("en-CA", {
@@ -132,9 +128,6 @@ const hashToken = (token) => crypto.createHash("sha256").update(token).digest("h
 
 const createPasswordResetUrl = (token) =>
   `${env.clientBaseUrl.replace(/\/$/, "")}/reset-password?token=${encodeURIComponent(token)}`;
-
-const createVerificationUrl = (token) =>
-  `${env.clientBaseUrl.replace(/\/$/, "")}/verify-email?token=${encodeURIComponent(token)}`;
 
 const syncCompletedAppointments = async (connection, userId) => {
   await connection.query(
@@ -277,27 +270,17 @@ export const registerUser = async (req, res) => {
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
-    const result = await createUser(
+    await createUser(
       normalizedNickname,
       normalizedEmail,
       hashedPassword,
       birthday,
       processedGender,
       phone_number,
-      false // is_verified is false by default
+      true // is_verified is true by default now
     );
-    const userId = result.insertId;
 
-    const verificationToken = crypto.randomBytes(32).toString("hex");
-    const tokenHash = hashToken(verificationToken);
-    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
-
-    await createVerificationToken(userId, tokenHash, expiresAt);
-
-    const verificationUrl = createVerificationUrl(verificationToken);
-    await sendVerificationEmail({ to: normalizedEmail, verificationUrl });
-
-    res.status(201).json({ message: "회원가입이 완료되었습니다. 이메일을 확인하여 계정을 인증해주세요." });
+    res.status(201).json({ message: "회원가입이 완료되었습니다." });
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: "Internal server error", error: error.message });
@@ -803,70 +786,5 @@ export const deleteUserController = async (req, res) => {
     res.status(500).json({ message: "Internal server error" });
   } finally {
     connection.release();
-  }
-};
-
-export const verifyEmail = async (req, res) => {
-  const { token } = req.body;
-
-  if (!token) {
-    return res.status(400).json({ message: "Verification token is missing." });
-  }
-
-  try {
-    const tokenHash = hashToken(token);
-    const verificationRecord = await findVerificationTokenByHash(tokenHash);
-
-    if (!verificationRecord) {
-      return res.status(400).json({ message: "Invalid or expired verification link." });
-    }
-
-    await verifyUserInDb(verificationRecord.user_id);
-    await deleteVerificationToken(tokenHash);
-
-    res.json({ message: "이메일이 성공적으로 인증되었습니다." });
-  } catch (error) {
-    console.error("Email verification failed:", error);
-    res.status(500).json({ message: "이메일 인증에 실패했습니다." });
-  }
-};
-
-export const resendVerificationEmail = async (req, res) => {
-  const { email } = req.body;
-  const normalizedEmail = String(email || "").trim().toLowerCase();
-
-  if (!EMAIL_PATTERN.test(normalizedEmail)) {
-    return res.status(400).json({ message: "유효하지 않은 이메일 주소입니다." });
-  }
-
-  try {
-    const user = await findUserByEmail(normalizedEmail);
-
-    if (!user) {
-      return res.status(404).json({ message: "해당 이메일로 등록된 사용자를 찾을 수 없습니다." });
-    }
-    if (user.is_verified) {
-      return res.status(400).json({ message: "이메일이 이미 인증되었습니다." });
-    }
-
-    // Invalidate any existing tokens for this user
-    await pool.query(
-      "DELETE FROM email_verification_tokens WHERE user_id = ?",
-      [user.user_id],
-    );
-
-    const verificationToken = crypto.randomBytes(32).toString("hex");
-    const tokenHash = hashToken(verificationToken);
-    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
-
-    await createVerificationToken(user.user_id, tokenHash, expiresAt);
-
-    const verificationUrl = createVerificationUrl(verificationToken);
-    await sendVerificationEmail({ to: normalizedEmail, verificationUrl });
-
-    res.json({ message: "인증 이메일을 다시 보냈습니다. 받은 편지함을 확인해주세요." });
-  } catch (error) {
-    console.error("Resend verification email failed:", error);
-    res.status(500).json({ message: "인증 이메일 재전송에 실패했습니다." });
   }
 };

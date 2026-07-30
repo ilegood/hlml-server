@@ -13,18 +13,8 @@ CREATE TABLE users (
     cancel_count INT DEFAULT 0,
     report_count INT DEFAULT 0,
     is_deleted   BOOLEAN DEFAULT FALSE,
-    is_verified  BOOLEAN DEFAULT FALSE,
+    is_verified  BOOLEAN DEFAULT TRUE,
     created_at   DATETIME DEFAULT NOW()
-);
-
-CREATE TABLE email_verification_tokens (
-    id         INT AUTO_INCREMENT PRIMARY KEY,
-    user_id    INT NOT NULL,
-    token_hash VARCHAR(255) NOT NULL,
-    expires_at DATETIME NOT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE,
-    UNIQUE KEY uq_token_hash (token_hash)
 );
 
 CREATE TABLE user_relations (

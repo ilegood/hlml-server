@@ -8,7 +8,7 @@ export const findUserByEmail = async (email) => {
   return rows[0];
 };
 
-export const createUser = async (nickname, email, hashedPassword, birthday, gender, phoneNumber, isVerified = false) => {
+export const createUser = async (nickname, email, hashedPassword, birthday, gender, phoneNumber, isVerified = true) => {
   const [result] = await pool.query(
     `INSERT INTO users (nickname, email, password, birthday, gender, phone_number, is_verified)
      VALUES (?, ?, ?, ?, ?, ?, ?)`,
@@ -44,38 +44,6 @@ export const updateUserProfile = async (userId, nickname, bio, hashedPassword, p
     [nickname, bio, hashedPassword, profileImg, userId]
   );
   return result.affectedRows;
-};
-
-export const createVerificationToken = async (userId, tokenHash, expiresAt) => {
-  await pool.query(
-    "INSERT INTO email_verification_tokens (user_id, token_hash, expires_at) VALUES (?, ?, ?)",
-    [userId, tokenHash, expiresAt]
-  );
-};
-
-export const findVerificationTokenByHash = async (tokenHash) => {
-  const [rows] = await pool.query(
-    `SELECT evt.user_id, u.email
-     FROM email_verification_tokens evt
-     JOIN users u ON evt.user_id = u.user_id
-     WHERE evt.token_hash = ? AND evt.expires_at > NOW()`,
-    [tokenHash]
-  );
-  return rows[0];
-};
-
-export const verifyUser = async (userId) => {
-  await pool.query(
-    "UPDATE users SET is_verified = TRUE WHERE user_id = ?",
-    [userId]
-  );
-};
-
-export const deleteVerificationToken = async (tokenHash) => {
-  await pool.query(
-    "DELETE FROM email_verification_tokens WHERE token_hash = ?",
-    [tokenHash]
-  );
 };
 
 export const searchUsers = async (query, myId) => {

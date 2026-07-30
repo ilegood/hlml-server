@@ -20,11 +20,34 @@ import { startPostDeletionJob } from "./workers/deleteExpiredPosts.js";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+const isAllowedLocalDevOrigin = (origin) => {
+  if (env.nodeEnv === "production") return false;
+
+  try {
+    const url = new URL(origin);
+    return (
+      ["localhost", "127.0.0.1"].includes(url.hostname) &&
+      ["http:", "https:"].includes(url.protocol)
+    );
+  } catch {
+    return false;
+  }
+};
+
+const corsOrigin = (origin, callback) => {
+  if (!origin || env.clientOrigins.includes(origin) || isAllowedLocalDevOrigin(origin)) {
+    callback(null, true);
+    return;
+  }
+
+  callback(new Error(`Not allowed by CORS: ${origin}`));
+};
+
 export const createApp = () => {
   const app = express();
 
   app.use("/uploads", express.static(path.join(__dirname, "../../uploads")));
-  app.use(cors({ origin: env.clientOrigins }));
+  app.use(cors({ origin: corsOrigin }));
   app.use(express.json());
 
   app.use("/friends", friendsRoutes);
@@ -59,7 +82,7 @@ export const createServer = (app = createApp()) => {
   const server = http.createServer(app);
   const io = new Server(server, {
     cors: {
-      origin: env.clientOrigins,
+      origin: corsOrigin,
       methods: ["GET", "POST"],
     },
   });
@@ -68,18 +91,33 @@ export const createServer = (app = createApp()) => {
   return { app, server, io };
 };
 
+const listenServer = (server) =>
+  new Promise((resolve, reject) => {
+    const onError = (error) => {
+      server.off("listening", onListening);
+      reject(error);
+    };
+    const onListening = () => {
+      server.off("error", onError);
+      console.log(`Server running on ${env.port}`);
+      resolve();
+    };
+
+    server.once("error", onError);
+    server.once("listening", onListening);
+    server.listen(env.port);
+  });
+
 export const startServer = async () => {
   await ensureRuntimeSchema();
 
   const { server, io } = createServer();
 
   registerChatSocket(io);
+  await listenServer(server);
+
   startAppointmentReminderJob(io);
   startPostDeletionJob(io);
-
-  server.listen(env.port, () => {
-    console.log(`Server running on ${env.port}`);
-  });
 
   return server;
 };

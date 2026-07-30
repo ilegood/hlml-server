@@ -273,19 +273,10 @@ export const ensureRuntimeSchema = async () => {
     );
 
     await addColumnIfMissing(connection, "users", "report_count", "INT DEFAULT 0");
-    await addColumnIfMissing(connection, "users", "is_verified", "BOOLEAN DEFAULT FALSE");
-    await connection.query(
-      `CREATE TABLE IF NOT EXISTS email_verification_tokens (
-        id         INT AUTO_INCREMENT PRIMARY KEY,
-        user_id    INT NOT NULL,
-        token_hash VARCHAR(255) NOT NULL,
-        expires_at DATETIME NOT NULL,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE,
-        UNIQUE KEY uq_token_hash (token_hash)
-      )`,
-    );
+    await addColumnIfMissing(connection, "users", "is_verified", "BOOLEAN DEFAULT TRUE");
     await addColumnIfMissing(connection, "posts", "report_count", "INT DEFAULT 0");
+    await addColumnIfMissing(connection, "posts", "is_author_hidden", "BOOLEAN DEFAULT FALSE");
+    await addColumnIfMissing(connection, "post_participants", "is_hidden", "BOOLEAN DEFAULT FALSE");
     await addColumnIfMissing(
       connection,
       "comments",
