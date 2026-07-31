@@ -5,8 +5,6 @@ import {
   registerUser,
   checkRegistrationAvailability,
   loginUser,
-  requestPasswordReset,
-  resetPassword,
   getProfile,
   getMyStats,
   getUserPublicProfile,
@@ -20,8 +18,6 @@ const router = express.Router();
 
 router.post("/register", registerUser);
 router.post("/login", loginUser);
-router.post("/password/forgot", requestPasswordReset);
-router.post("/password/reset", resetPassword);
 router.get("/register/check", checkRegistrationAvailability);
 router.get("/profile", auth, getProfile);
 router.get("/me/stats", auth, getMyStats);

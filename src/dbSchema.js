@@ -131,9 +131,6 @@ const purgeDeletedUsers = async (connection) => {
     "DELETE FROM dm_rooms WHERE user1_id IN (?) OR user2_id IN (?)",
     [deletedUserIds, deletedUserIds],
   );
-  await connection.query("DELETE FROM password_reset_tokens WHERE user_id IN (?)", [
-    deletedUserIds,
-  ]);
   await connection.query("DELETE FROM appointment_completions WHERE user_id IN (?)", [
     deletedUserIds,
   ]);
@@ -242,20 +239,6 @@ export const ensureRuntimeSchema = async () => {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         UNIQUE KEY uq_read (message_id, user_id),
         INDEX idx_message_reads_user_id (user_id)
-      )`,
-    );
-
-    await connection.query(
-      `CREATE TABLE IF NOT EXISTS password_reset_tokens (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        user_id INT NOT NULL,
-        token_hash VARCHAR(255) NOT NULL,
-        expires_at DATETIME NOT NULL,
-        used_at DATETIME NULL,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        INDEX idx_password_reset_tokens_token_hash (token_hash),
-        INDEX idx_password_reset_tokens_user_id (user_id),
-        FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
       )`,
     );
 

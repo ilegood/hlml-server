@@ -1,5 +1,4 @@
 import bcrypt from "bcrypt";
-import crypto from "crypto";
 import jwt from "jsonwebtoken";
 import pool from "../db.js";
 
@@ -20,7 +19,6 @@ import {
   countPostParticipants,
   updatePostParticipantsAndStatus,
 } from "../repositories/postRepository.js";
-import { sendPasswordResetEmail } from "../utils/mail.js";
 
 const getSeoulDateTimeString = () => {
   const parts = new Intl.DateTimeFormat("en-CA", {
@@ -124,11 +122,6 @@ const validatePhoneNumber = (phoneNumber) => {
   return "";
 };
 
-const hashToken = (token) => crypto.createHash("sha256").update(token).digest("hex");
-
-const createPasswordResetUrl = (token) =>
-  `${env.clientBaseUrl.replace(/\/$/, "")}/reset-password?token=${encodeURIComponent(token)}`;
-
 const syncCompletedAppointments = async (connection, userId) => {
   await connection.query(
     `INSERT IGNORE INTO appointment_completions (user_id, post_id, completed_at)
@@ -202,9 +195,6 @@ const purgeUserRecords = async (connection, userId) => {
     [userId, userId],
   );
 
-  await connection.query("DELETE FROM password_reset_tokens WHERE user_id = ?", [
-    userId,
-  ]);
   await connection.query("DELETE FROM appointment_completions WHERE user_id = ?", [
     userId,
   ]);
@@ -362,114 +352,6 @@ export const loginUser = async (req, res) => {
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: "Internal server error" });
-  }
-};
-
-export const requestPasswordReset = async (req, res) => {
-  const normalizedEmail = String(req.body.email || "").trim().toLowerCase();
-  const response = {
-    message: "가입된 이메일이라면 비밀번호 재설정 링크를 보냈습니다.",
-  };
-
-  if (!EMAIL_PATTERN.test(normalizedEmail)) {
-    return res.json(response);
-  }
-
-  try {
-    const user = await findUserByEmail(normalizedEmail);
-    if (!user) {
-      return res.json(response);
-    }
-
-    const token = crypto.randomBytes(32).toString("hex");
-    const tokenHash = hashToken(token);
-    const expiresAt = new Date(Date.now() + 30 * 60 * 1000);
-
-    await pool.query(
-      `UPDATE password_reset_tokens
-       SET used_at = NOW()
-       WHERE user_id = ? AND used_at IS NULL`,
-      [user.user_id],
-    );
-
-    await pool.query(
-      `INSERT INTO password_reset_tokens (user_id, token_hash, expires_at)
-       VALUES (?, ?, ?)`,
-      [user.user_id, tokenHash, expiresAt],
-    );
-
-    await sendPasswordResetEmail({
-      to: user.email,
-      resetUrl: createPasswordResetUrl(token),
-    });
-
-    res.json(response);
-  } catch (error) {
-    console.error("Password reset request failed:", error);
-    res.status(500).json({ message: "비밀번호 재설정 요청에 실패했습니다." });
-  }
-};
-
-export const resetPassword = async (req, res) => {
-  const token = String(req.body.token || "").trim();
-  const password = String(req.body.password || "");
-
-  if (!token) {
-    return res.status(400).json({ message: "재설정 링크가 올바르지 않습니다." });
-  }
-
-  const connection = await pool.getConnection();
-
-  try {
-    const tokenHash = hashToken(token);
-    const [rows] = await connection.query(
-      `SELECT
-         prt.id,
-         prt.user_id,
-         u.email,
-         u.nickname
-       FROM password_reset_tokens prt
-       JOIN users u ON u.user_id = prt.user_id
-       WHERE prt.token_hash = ?
-         AND prt.used_at IS NULL
-         AND prt.expires_at > NOW()
-       LIMIT 1`,
-      [tokenHash],
-    );
-
-    const resetToken = rows[0];
-    if (!resetToken) {
-      return res.status(400).json({ message: "재설정 링크가 만료되었거나 올바르지 않습니다." });
-    }
-
-    const passwordValidationMessage = getPasswordValidationMessage(password, {
-      nickname: resetToken.nickname,
-      email: resetToken.email,
-    });
-    if (passwordValidationMessage) {
-      return res.status(400).json({ message: passwordValidationMessage });
-    }
-
-    const hashedPassword = await bcrypt.hash(password, 10);
-
-    await connection.beginTransaction();
-    await connection.query("UPDATE users SET password = ? WHERE user_id = ?", [
-      hashedPassword,
-      resetToken.user_id,
-    ]);
-    await connection.query(
-      "UPDATE password_reset_tokens SET used_at = NOW() WHERE user_id = ? AND used_at IS NULL",
-      [resetToken.user_id],
-    );
-    await connection.commit();
-
-    res.json({ message: "비밀번호가 변경되었습니다." });
-  } catch (error) {
-    await connection.rollback();
-    console.error("Password reset failed:", error);
-    res.status(500).json({ message: "비밀번호 변경에 실패했습니다." });
-  } finally {
-    connection.release();
   }
 };
 
