@@ -13,7 +13,6 @@ CREATE TABLE users (
     cancel_count INT DEFAULT 0,
     report_count INT DEFAULT 0,
     is_deleted   BOOLEAN DEFAULT FALSE,
-    is_verified  BOOLEAN DEFAULT TRUE,
     created_at   DATETIME DEFAULT NOW()
 );
 

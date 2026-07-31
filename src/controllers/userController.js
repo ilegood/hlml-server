@@ -276,8 +276,7 @@ export const registerUser = async (req, res) => {
       hashedPassword,
       birthday,
       processedGender,
-      phone_number,
-      true // is_verified is true by default now
+      phone_number
     );
 
     res.status(201).json({ message: "회원가입이 완료되었습니다." });

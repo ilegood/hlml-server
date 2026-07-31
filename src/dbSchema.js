@@ -273,7 +273,6 @@ export const ensureRuntimeSchema = async () => {
     );
 
     await addColumnIfMissing(connection, "users", "report_count", "INT DEFAULT 0");
-    await addColumnIfMissing(connection, "users", "is_verified", "BOOLEAN DEFAULT TRUE");
     await addColumnIfMissing(connection, "posts", "report_count", "INT DEFAULT 0");
     await addColumnIfMissing(connection, "posts", "is_author_hidden", "BOOLEAN DEFAULT FALSE");
     await addColumnIfMissing(connection, "post_participants", "is_hidden", "BOOLEAN DEFAULT FALSE");

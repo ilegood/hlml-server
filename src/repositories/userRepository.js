@@ -2,28 +2,28 @@ import pool from "../db.js";
 
 export const findUserByEmail = async (email) => {
   const [rows] = await pool.query(
-    "SELECT user_id, nickname, email, password, bio, profile_img, is_verified FROM users WHERE email = ? AND is_deleted = FALSE",
+    "SELECT user_id, nickname, email, password, bio, profile_img FROM users WHERE email = ? AND is_deleted = FALSE",
     [email],
   );
   return rows[0];
 };
 
-export const createUser = async (nickname, email, hashedPassword, birthday, gender, phoneNumber, isVerified = true) => {
+export const createUser = async (nickname, email, hashedPassword, birthday, gender, phoneNumber) => {
   const [result] = await pool.query(
-    `INSERT INTO users (nickname, email, password, birthday, gender, phone_number, is_verified)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
-    [nickname, email, hashedPassword, birthday, gender, phoneNumber, isVerified]
+    `INSERT INTO users (nickname, email, password, birthday, gender, phone_number)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+    [nickname, email, hashedPassword, birthday, gender, phoneNumber]
   );
   return result;
 };
 
 export const findUserById = async (userId) => {
-  const [rows] = await pool.query("SELECT user_id, nickname, email, bio, profile_img, is_verified FROM users WHERE user_id = ? AND is_deleted = FALSE", [userId]);
+  const [rows] = await pool.query("SELECT user_id, nickname, email, bio, profile_img FROM users WHERE user_id = ? AND is_deleted = FALSE", [userId]);
   return rows[0];
 };
 
 export const findUserByIdWithPassword = async (userId) => {
-  const [rows] = await pool.query("SELECT user_id, nickname, email, bio, profile_img, password, is_verified FROM users WHERE user_id = ? AND is_deleted = FALSE", [userId]);
+  const [rows] = await pool.query("SELECT user_id, nickname, email, bio, profile_img, password FROM users WHERE user_id = ? AND is_deleted = FALSE", [userId]);
   return rows[0];
 };
 
