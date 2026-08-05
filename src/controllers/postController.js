@@ -10,11 +10,17 @@ const buildAppointmentChangePayload = (before, after) => {
     changes.push(`장소: ${after.place || "미정"}`);
   }
 
-  if (String(before.date || "").slice(0, 10) !== String(after.date || "").slice(0, 10)) {
+  if (
+    String(before.date || "").slice(0, 10) !==
+    String(after.date || "").slice(0, 10)
+  ) {
     changes.push(`날짜: ${String(after.date || "").slice(0, 10) || "미정"}`);
   }
 
-  if (String(before.time || "").slice(0, 5) !== String(after.time || "").slice(0, 5)) {
+  if (
+    String(before.time || "").slice(0, 5) !==
+    String(after.time || "").slice(0, 5)
+  ) {
     changes.push(`시간: ${String(after.time || "").slice(0, 5) || "미정"}`);
   }
 
@@ -136,10 +142,7 @@ export const updatePost = async (req, res) => {
 
 export const deletePost = async (req, res) => {
   try {
-    const affectedRows = await postService.deletePost(
-      req.params.id,
-      req.userId,
-    );
+    const affectedRows = await postService.deletePost(req.params.id, req.userId);
     if (!affectedRows) return res.status(403).json({ message: "forbidden" });
     res.json({ success: true });
   } catch (e) {
