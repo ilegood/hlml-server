@@ -33,12 +33,17 @@ export const getRequests = async (req, res) => {
 
 export const addFriend = async (req, res) => {
   try {
-    res.json(
-      await friendService.addFriend({
-        userId: req.userId,
-        targetNickname: req.body.targetNickname,
-      }),
-    );
+    const result = await friendService.addFriend({
+      userId: req.userId,
+      targetNickname: req.body.targetNickname,
+    });
+    const io = req.app.get("io");
+    if (result.targetId) {
+      io?.to(`user_${result.targetId}`).emit("friend_request_received", {
+        requesterId: Number(req.userId),
+      });
+    }
+    res.json(result);
   } catch (error) {
     sendError(res, error, `요청 실패: ${error.message}`);
   }

@@ -483,7 +483,7 @@ export const updateProfile = async (req, res) => {
 };
 
 export const searchUsersController = async (req, res) => {
-  const { q } = req.query;
+  const q = String(req.query.q || "").trim();
   const myId = req.userId;
   if (!q) return res.json([]);
 

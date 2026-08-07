@@ -58,6 +58,7 @@ export const addFriend = async ({ userId, targetNickname }) => {
       await repo.acceptRelation(relation.id);
       return {
         success: true,
+        targetId,
         message: "상대방의 요청을 수락하여 친구가 되었습니다.",
       };
     }
@@ -73,7 +74,7 @@ export const addFriend = async ({ userId, targetNickname }) => {
   }
 
   await repo.createPendingRelation(userId, targetId);
-  return { success: true };
+  return { success: true, targetId };
 };
 
 export const acceptFriend = async ({ userId, targetId }) => {
