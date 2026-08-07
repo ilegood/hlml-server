@@ -363,13 +363,25 @@ export const getMyChatRooms = async (userId) => {
   return rows
     .filter((row) => !blockedUserIds.has(Number(row.user_id)))
     .map((row) => {
-      const { likes_json, participants_json, comments_json, ...post } = row;
+      const {
+        likes_json,
+        participants_json,
+        comments_json,
+        author_user_id,
+        author_nickname,
+        author_profile_img,
+        ...post
+      } = row;
       return mapPostRow(
         post,
         parseJsonArray(likes_json),
         parseJsonArray(participants_json),
         parseJsonArray(comments_json),
-        null,
+        {
+          user_id: author_user_id,
+          nickname: author_nickname,
+          profile_img: author_profile_img,
+        },
         blockedUserIds,
       );
     });
