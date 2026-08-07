@@ -145,7 +145,37 @@ export const registerRoomSocket = (io, socket) => {
         }
 
         if (nickname && userIdInt) {
-          const joinMsgContent = `${nickname}님이 들어왔습니다.`;
+          const [previousSystemRows] = await query(
+            `SELECT content
+             FROM messages
+             WHERE room_id = ?
+               AND user_id = ?
+               AND is_system = 1
+               AND (content LIKE '%님이 들어왔습니다.' OR content LIKE '%님으로 이름 변경했습니다.')
+             ORDER BY id DESC
+             LIMIT 1`,
+            [roomStr, userIdInt],
+          );
+
+          const previousSystemContent = previousSystemRows[0]?.content || "";
+          const joinSuffix = "님이 들어왔습니다.";
+          const renameSuffix = "님으로 이름 변경했습니다.";
+          let previousNickname = "";
+
+          if (previousSystemContent.endsWith(renameSuffix)) {
+            const renamePrefix = previousSystemContent.slice(0, -renameSuffix.length);
+            const markerIndex = renamePrefix.lastIndexOf("님이 ");
+            if (markerIndex >= 0) {
+              previousNickname = renamePrefix.slice(markerIndex + "님이 ".length);
+            }
+          } else if (previousSystemContent.endsWith(joinSuffix)) {
+            previousNickname = previousSystemContent.slice(0, -joinSuffix.length);
+          }
+
+          const systemMsgContent =
+            previousNickname && previousNickname !== nickname
+              ? `${previousNickname}님이 ${nickname}님으로 이름 변경했습니다.`
+              : `${nickname}님이 들어왔습니다.`;
           const [result] = await query(
             `INSERT INTO messages (room_id, user_id, nickname, content, is_system)
              SELECT ?, ?, ?, ?, ?
@@ -154,7 +184,7 @@ export const registerRoomSocket = (io, socket) => {
                SELECT 1 FROM messages
                WHERE room_id = ? AND user_id = ? AND is_system = 1 AND content = ?
              )`,
-            [roomStr, userIdInt, "System", joinMsgContent, 1, roomStr, userIdInt, joinMsgContent],
+            [roomStr, userIdInt, "System", systemMsgContent, 1, roomStr, userIdInt, systemMsgContent],
           );
 
           if (result.affectedRows > 0) {
@@ -163,7 +193,7 @@ export const registerRoomSocket = (io, socket) => {
               roomId: String(roomStr),
               userId: userIdInt,
               nickname: "System",
-              content: joinMsgContent,
+              content: systemMsgContent,
               isSystem: true,
               created_at: new Date().toISOString(),
             };
@@ -189,7 +219,7 @@ export const registerRoomSocket = (io, socket) => {
                 io.to(`user_${member.user_id}`).emit("entrance_alarm", {
                   roomId: roomStr,
                   roomTitle: roomRows[0].title,
-                  message: joinMsgContent,
+                  message: systemMsgContent,
                 });
               }
             });
