@@ -120,6 +120,7 @@ export const registerRoomSocket = (io, socket) => {
              p.capacity,
              p.participants,
              p.status,
+             p.user_id AS authorId,
              u.nickname AS author
            FROM posts p
            JOIN users u ON p.user_id = u.user_id AND u.is_deleted = FALSE
@@ -132,6 +133,7 @@ export const registerRoomSocket = (io, socket) => {
             title: roomRows[0].title,
             image: roomRows[0].image,
             author: roomRows[0].author,
+            authorId: roomRows[0].authorId,
             date: roomRows[0].date,
             time: roomRows[0].time,
             place: roomRows[0].place,
