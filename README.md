@@ -53,10 +53,10 @@ Frontend는 별도의 Repository에서 관리합니다.
 <table>
   <tr>
     <td align="center">
-      <img src="./images/main.png" width="400">
+      <img src="./images/main.png" width="400" alt="메인 / 모임 탐색">
     </td>
     <td align="center">
-      <img src="./images/auth.png" width="400">
+      <img src="./images/auth.png" width="400" alt="로그인 / 회원가입">
     </td>
   </tr>
   <tr>
@@ -65,10 +65,10 @@ Frontend는 별도의 Repository에서 관리합니다.
   </tr>
   <tr>
     <td align="center">
-      <img src="./images/post.png" width="400">
+      <img src="./images/post.png" width="400" alt="모임 게시글">
     </td>
     <td align="center">
-      <img src="./images/chat.png" width="400">
+      <img src="./images/chat.png" width="400" alt="실시간 채팅">
     </td>
   </tr>
   <tr>
