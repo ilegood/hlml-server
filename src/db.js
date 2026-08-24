@@ -39,7 +39,7 @@ export const query = async (sql, params) => {
 
       retries++;
       console.warn(
-        `Retrying DB query after ${error.code}. Attempt ${retries}/${MAX_RETRIES}`
+        `Retrying DB query after ${error.code}. Attempt ${retries}/${MAX_RETRIES}`,
       );
 
       if (retries < MAX_RETRIES) {
