@@ -44,27 +44,38 @@ Frontend는 별도의 Repository에서 관리합니다.
 
 ## 🎥 Demo
 
-### 🌐 배포 사이트
+### 🌐 Live Service
 
-**[할래말래 바로가기](https://hlml-bice.vercel.app/)**
+[할래말래 바로가기](https://hlml-bice.vercel.app/)
 
-> 프로젝트의 주요 화면과 기능을 보여주는 이미지 및 GIF를 추가할 예정입니다.
+### 📸 Screenshots
 
-### 📸 Main Screens
-
-<!-- 프로젝트 대표 이미지 -->
-![할래말래 메인 화면](./images/main.png)
-
-<!-- 로그인 / 회원가입 -->
-![로그인 및 회원가입](./images/auth.png)
-
-<!-- 모임 게시글 -->
-![모임 게시글](./images/post.png)
-
-<!-- 실시간 채팅 -->
-![실시간 채팅](./images/chat.png)
-
----
+<table>
+  <tr>
+    <td align="center">
+      <img src="./images/main.png" width="400">
+    </td>
+    <td align="center">
+      <img src="./images/auth.png" width="400">
+    </td>
+  </tr>
+  <tr>
+    <td align="center"><b>메인 / 모임 탐색</b></td>
+    <td align="center"><b>로그인 / 회원가입</b></td>
+  </tr>
+  <tr>
+    <td align="center">
+      <img src="./images/post.png" width="400">
+    </td>
+    <td align="center">
+      <img src="./images/chat.png" width="400">
+    </td>
+  </tr>
+  <tr>
+    <td align="center"><b>모임 게시글</b></td>
+    <td align="center"><b>실시간 채팅</b></td>
+  </tr>
+</table>
 
 # ⭐ Main Features
 
