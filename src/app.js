@@ -13,7 +13,6 @@ import friendsRoutes from "./routes/friends.js";
 import postRoutes from "./routes/post.js";
 import reportRoutes from "./routes/report.js";
 import userRoutes from "./routes/user.js";
-import pool from "./db.js";
 import { registerChatSocket } from "./socket/chat.socket.js";
 import { startAppointmentReminderJob } from "./workers/appointmentReminders.js";
 import { startPostDeletionJob } from "./workers/deleteExpiredPosts.js";
@@ -21,60 +20,34 @@ import { startPostDeletionJob } from "./workers/deleteExpiredPosts.js";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const ensureMissingColumns = async () => {
-  const tables = [
-    { table: "posts", column: "is_deleted", type: "BOOLEAN DEFAULT FALSE" },
-    { table: "messages", column: "is_deleted", type: "BOOLEAN DEFAULT FALSE" },
-    { table: "messages", column: "is_edited", type: "BOOLEAN DEFAULT FALSE" },
-  ];
-  for (const { table, column, type } of tables) {
-    try {
-      await pool.query(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`);
-    } catch (err) {
-      if (err.errno !== 1060)
-        console.warn(`Failed to add ${table}.${column}:`, err.message);
-    }
+const isAllowedLocalDevOrigin = (origin) => {
+  if (env.nodeEnv === "production") return false;
+
+  try {
+    const url = new URL(origin);
+    return (
+      ["localhost", "127.0.0.1"].includes(url.hostname) &&
+      ["http:", "https:"].includes(url.protocol)
+    );
+  } catch {
+    return false;
   }
-  const extraTables = [
-    `CREATE TABLE IF NOT EXISTS dm_rooms (
-      id          INT AUTO_INCREMENT PRIMARY KEY,
-      user1_id    INT NOT NULL,
-      user2_id    INT NOT NULL,
-      created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      UNIQUE KEY uq_dm (user1_id, user2_id)
-    )`,
-    `CREATE TABLE IF NOT EXISTS message_reactions (
-      id          INT AUTO_INCREMENT PRIMARY KEY,
-      message_id  INT NOT NULL,
-      user_id     INT NOT NULL,
-      emoji       VARCHAR(50) NOT NULL,
-      created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      UNIQUE KEY uq_reaction (message_id, user_id, emoji),
-      INDEX idx_message_reactions_user_id (user_id)
-    )`,
-    `CREATE TABLE IF NOT EXISTS message_reads (
-      id          INT AUTO_INCREMENT PRIMARY KEY,
-      message_id  INT NOT NULL,
-      user_id     INT NOT NULL,
-      created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      UNIQUE KEY uq_read (message_id, user_id),
-      INDEX idx_message_reads_user_id (user_id)
-    )`,
-  ];
-  for (const ddl of extraTables) {
-    try {
-      await pool.query(ddl);
-    } catch (err) {
-      console.warn("Failed to create table:", err.message);
-    }
+};
+
+const corsOrigin = (origin, callback) => {
+  if (!origin || env.clientOrigins.includes(origin) || isAllowedLocalDevOrigin(origin)) {
+    callback(null, true);
+    return;
   }
+
+  callback(new Error(`Not allowed by CORS: ${origin}`));
 };
 
 export const createApp = () => {
   const app = express();
 
   app.use("/uploads", express.static(path.join(__dirname, "../../uploads")));
-  app.use(cors({ origin: env.clientOrigins }));
+  app.use(cors({ origin: corsOrigin }));
   app.use(express.json());
 
   app.use("/friends", friendsRoutes);
@@ -109,7 +82,7 @@ export const createServer = (app = createApp()) => {
   const server = http.createServer(app);
   const io = new Server(server, {
     cors: {
-      origin: env.clientOrigins,
+      origin: corsOrigin,
       methods: ["GET", "POST"],
     },
   });
@@ -118,19 +91,33 @@ export const createServer = (app = createApp()) => {
   return { app, server, io };
 };
 
+const listenServer = (server) =>
+  new Promise((resolve, reject) => {
+    const onError = (error) => {
+      server.off("listening", onListening);
+      reject(error);
+    };
+    const onListening = () => {
+      server.off("error", onError);
+      console.log(`Server running on ${env.port}`);
+      resolve();
+    };
+
+    server.once("error", onError);
+    server.once("listening", onListening);
+    server.listen(env.port);
+  });
+
 export const startServer = async () => {
-  await ensureMissingColumns();
   await ensureRuntimeSchema();
 
   const { server, io } = createServer();
 
   registerChatSocket(io);
+  await listenServer(server);
+
   startAppointmentReminderJob(io);
   startPostDeletionJob(io);
-
-  server.listen(env.port, () => {
-    console.log(`Server running on ${env.port}`);
-  });
 
   return server;
 };
